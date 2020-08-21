@@ -1,1 +1,1 @@
-# HPCGRA - An Orthogonal Design CGRA Generator for HighPerformance Spatial Accelerators
+# HPCGRA - An Orthogonal Design CGRA Generator for High Performance Spatial Accelerators
