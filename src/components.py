@@ -1,6 +1,7 @@
 from math import ceil, log
 
 from veriloggen import *
+from veriloggen.types.util import log2
 
 from utils import initialize_regs, bits
 
@@ -80,7 +81,9 @@ class Components:
         init_file = m.Parameter('init_file', 'mem_file.txt')
         data_width = m.Parameter('data_width', 32)
         addr_width = m.Parameter('addr_width', 8)
+
         clk = m.Input('clk')
+
         we = m.Input('we')
         re = m.Input('re')
 
@@ -110,7 +113,7 @@ class Components:
             For(i(0), i < Power(2, addr_width), i.inc())(
                 mem[i](0)
             ),
-            Systask('readmemb', init_file, mem)
+            Systask('readmemh', init_file, mem)
         )
         m.EmbeddedCode('//synthesis translate_on')
         self.cache[name] = m
@@ -126,16 +129,18 @@ class Components:
         width = m.Parameter('width', 8)
         if max_latency > 0:
             clk = m.Input('clk')
+            en = m.Input('en')
             latency = m.Input('latency', max_latency_bits)
             din = m.Input('in', width)
             dout = m.Output('out', width)
-
             shift_reg = m.Reg('shift_reg', width, 3 * max_latency)
             i = m.Integer('i')
             m.Always(Posedge(clk))(
-                shift_reg[0](din),
-                For(i(1), i < 3 * max_latency, i.inc())(
-                    shift_reg[i](shift_reg[i - 1])
+                If(en)(
+                    shift_reg[0](din),
+                    For(i(1), i < 3 * max_latency, i.inc())(
+                        shift_reg[i](shift_reg[i - 1])
+                    )
                 )
             )
             mux = self.create_multiplexer(max_latency + 1)
@@ -240,5 +245,648 @@ class Components:
             m.Instance(switch_in, switch_in.name, [('width', width)], [('sel', sel_in)] + inputs + sin_sout_out)
             m.Instance(switch_out, switch_out.name, [('width', width)], [('sel', sel_out)] + sin_sout_in + outputs)
 
+        self.cache[name] = m
+        return m
+
+    def create_control_conf(self, cgra_id, num_pe_io_in, num_pe_io_out, num_cicle_wait_conf_finish):
+
+        name = 'cgra%d_control_conf' % cgra_id
+        if name in self.cache.keys():
+            return self.cache[name]
+
+        m = Module(name)
+
+        CONF_DATA_IN_WIDTH = m.Parameter('CONF_DATA_IN_WIDTH', 512)
+        CONF_DATA_OUT_WIDTH = m.Parameter('CONF_DATA_OUT_WIDTH', 8)
+
+        CONF_SIZE = m.Localparam('CONF_SIZE', Div(CONF_DATA_IN_WIDTH, CONF_DATA_OUT_WIDTH))
+
+        clk = m.Input('clk')
+        rst = m.Input('rst')
+        start = m.Input('start')
+
+        available_read = m.Input('available_read')
+        req_rd_data = m.Output('req_rd_data')
+        rd_data = m.Input('rd_data', CONF_DATA_IN_WIDTH)
+        rd_data_valid = m.Input('rd_data_valid')
+
+        conf_out_bus = m.OutputReg('conf_out_bus', CONF_DATA_OUT_WIDTH)
+
+        read_fifo_mask = m.OutputReg('read_fifo_mask', num_pe_io_in)
+        write_fifo_mask = m.OutputReg('write_fifo_mask', num_pe_io_out)
+        write_fifo_ignore = m.OutputReg('write_fifo_ignore', num_pe_io_out * 16)
+        write_fifo_loop_ignore = m.OutputReg('write_fifo_loop_ignore', num_pe_io_out * 16)
+
+        done = m.OutputReg('done')
+
+        FSM_INIT_CTRL_IDLE = m.Localparam('FSM_INIT_CTRL_IDLE', 0)
+        FSM_INIT_CTRL_INIT = m.Localparam('FSM_INIT_CTRL_INIT', 1)
+        FSM_INIT_CTRL_INIT2 = m.Localparam('FSM_INIT_CTRL_INIT2', 2)
+        FSM_INIT_CTRL_INIT3 = m.Localparam('FSM_INIT_CTRL_INIT3', 3)
+        FSM_SEND_INIT_CONF_PE = m.Localparam('FSM_SEND_INIT_CONF_PE', 4)
+        FSM_INIT_CTRL_WAIT_DATA = m.Localparam('FSM_INIT_CTRL_WAIT_DATA', 5)
+        FSM_INIT_CTRL_REQ_DATA = m.Localparam('FSM_INIT_CTRL_REQ_DATA', 6)
+        FSM_INIT_CONF_DONE = m.Localparam('FSM_INIT_CONF_DONE', 7)
+        FSM_WAIT_ALL_CONF_FINISH = m.Localparam('FSM_WAIT_ALL_CONF_FINISH', 8)
+
+        m.EmbeddedCode('')
+        fsm_conf_ctrl = m.Reg('fsm_conf_ctrl', 4)
+        fsm_conf_ctrl_next = m.Reg('fsm_conf_ctrl_next', 4)
+        conf_req_data = m.Reg('conf_req_data')
+        conf_cl = m.Reg('conf_cl', CONF_DATA_IN_WIDTH)
+        qtd_conf = m.Reg('qtd_conf', 32)
+        conf_data = m.Reg('conf_data', CONF_DATA_OUT_WIDTH)
+        send_conf = m.Reg('send_conf')
+        conf_counter = m.Reg('conf_counter', 32)
+        conf_counter_cl = m.Reg('conf_counter_cl', 10)
+        wait_counter = m.Reg('wait_counter', int(ceil(log2(num_cicle_wait_conf_finish))) + 1)
+
+        m.EmbeddedCode('')
+
+        req_rd_data.assign(conf_req_data)
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                fsm_conf_ctrl(FSM_INIT_CTRL_IDLE),
+                fsm_conf_ctrl_next(FSM_INIT_CTRL_IDLE),
+                conf_req_data(0),
+                send_conf(0),
+                conf_counter(0),
+                conf_counter_cl(CONF_SIZE),
+                done(0),
+                read_fifo_mask(0),
+                write_fifo_mask(0),
+                wait_counter(0)
+            ).Else(
+                conf_req_data(0),
+                send_conf(0),
+                Case(fsm_conf_ctrl)(
+                    When(FSM_INIT_CTRL_IDLE)(
+                        If(start)(
+                            fsm_conf_ctrl(FSM_INIT_CTRL_REQ_DATA),
+                            fsm_conf_ctrl_next(FSM_INIT_CTRL_INIT)
+                        )
+                    ),
+                    When(FSM_INIT_CTRL_INIT)(
+                        qtd_conf(conf_cl[0:18]),
+                        read_fifo_mask(conf_cl[32:32 + num_pe_io_in]),
+                        write_fifo_mask(conf_cl[96:96 + num_pe_io_out]),
+                        fsm_conf_ctrl(FSM_INIT_CTRL_REQ_DATA),
+                        fsm_conf_ctrl_next(FSM_INIT_CTRL_INIT2)
+                    ),
+                    When(FSM_INIT_CTRL_INIT2)(
+                        write_fifo_ignore(conf_cl[0:num_pe_io_out * 16]),
+                        fsm_conf_ctrl(FSM_INIT_CTRL_REQ_DATA),
+                        fsm_conf_ctrl_next(FSM_INIT_CTRL_INIT3)
+                    ),
+                    When(FSM_INIT_CTRL_INIT3)(
+                        write_fifo_loop_ignore(conf_cl[0:num_pe_io_out * 16]),
+                        fsm_conf_ctrl(FSM_SEND_INIT_CONF_PE),
+                    ),
+                    When(FSM_SEND_INIT_CONF_PE)(
+                        If(conf_counter >= qtd_conf)(
+                            fsm_conf_ctrl(FSM_WAIT_ALL_CONF_FINISH)
+                        ).Else(
+                            If(conf_counter_cl < CONF_SIZE)(
+                                conf_data(conf_cl[0:CONF_DATA_OUT_WIDTH]),
+                                conf_cl(conf_cl[CONF_DATA_OUT_WIDTH:]),
+                                send_conf(1),
+                                conf_counter.inc(),
+                                conf_counter_cl.inc(),
+                            ).Else(
+                                conf_counter_cl(Int(0, conf_counter_cl.width, 10)),
+                                fsm_conf_ctrl(FSM_INIT_CTRL_REQ_DATA),
+                                fsm_conf_ctrl_next(FSM_SEND_INIT_CONF_PE)
+                            )
+                        )
+                    ),
+                    When(FSM_INIT_CTRL_REQ_DATA)(
+                        If(available_read)(
+                            conf_req_data(1),
+                            fsm_conf_ctrl(FSM_INIT_CTRL_WAIT_DATA)
+                        )
+                    ),
+                    When(FSM_INIT_CTRL_WAIT_DATA)(
+                        If(rd_data_valid)(
+                            conf_cl(rd_data),
+                            fsm_conf_ctrl(fsm_conf_ctrl_next),
+                        )
+                    ),
+                    When(FSM_WAIT_ALL_CONF_FINISH)(
+                        wait_counter.inc(),
+                        If(wait_counter > num_cicle_wait_conf_finish)(
+                            fsm_conf_ctrl(FSM_INIT_CONF_DONE)
+                        )
+                    ),
+                    When(FSM_INIT_CONF_DONE)(
+                        done(1)
+                    )
+                )
+            )
+        )
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                conf_out_bus(0),
+            ).Else(
+                If(send_conf)(
+                    conf_out_bus(conf_data),
+                ).Else(
+                    conf_out_bus(0)
+                ),
+            )
+        )
+
+        initialize_regs(m,
+                        {'fsm_conf_ctrl': FSM_INIT_CTRL_IDLE,
+                         'fsm_conf_ctrl_next': FSM_INIT_CTRL_IDLE,
+                         'conf_counter_cl': CONF_SIZE})
+        self.cache[name] = m
+
+        return m
+
+    def create_control_exec(self, cgra_id, num_pe_io_in, num_pe_io_out):
+        name = 'cgra%d_control_exec' % cgra_id
+        if name in self.cache.keys():
+            return self.cache[name]
+        m = Module(name)
+
+        clk = m.Input('clk')
+        rst = m.Input('rst')
+        start = m.Input('start')
+
+        read_fifo_mask = m.Input('read_fifo_mask', num_pe_io_in)
+        write_fifo_mask = m.Input('write_fifo_mask', num_pe_io_out)
+        write_fifo_ignore = m.Input('write_fifo_ignore', num_pe_io_out * 16)
+        write_fifo_loop_ignore = m.Input('write_fifo_loop_ignore', num_pe_io_out * 16)
+
+        available_pop = m.Input('available_pop', num_pe_io_in)
+        available_push = m.Input('available_push', num_pe_io_out)
+
+        write_fifo_done = m.Input('write_fifo_done', num_pe_io_out)
+
+        en = m.OutputReg('en')
+        en_pop = m.OutputReg('en_pop', num_pe_io_in)
+        en_push = m.Output('en_push', num_pe_io_out)
+
+        done = m.OutputReg('done')
+
+        FSM_IDLE = m.Localparam('FSM_IDLE', 0)
+        FSM_PROCESS = m.Localparam('FSM_PROCESS', 1)
+        FSM_DONE = m.Localparam('FSM_DONE', 3)
+        FSM_WAIT_DATA = m.Localparam('FSM_WAIT_DATA', 2)
+        m.EmbeddedCode('')
+
+        fsm_state = m.Reg('fsm_state', 2)
+        available_pop_masked = m.Reg('available_pop_masked', num_pe_io_in)
+        available_push_masked = m.Reg('available_push_masked', num_pe_io_out)
+
+        available_queues = m.Reg('available_queues')
+        write_fifo_done_masked = m.Reg('write_fifo_done_masked')
+        en_local = m.Reg('en_local')
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                available_pop_masked(0),
+                available_push_masked(0),
+                available_queues(0),
+                write_fifo_done_masked(0)
+            ).Else(
+                available_pop_masked(available_pop | Unot(read_fifo_mask)),
+                available_push_masked(available_push | Unot(write_fifo_mask)),
+                available_queues(Uand(available_pop_masked & available_push_masked)),
+                write_fifo_done_masked(Uand(write_fifo_done | ~write_fifo_mask))
+            )
+        )
+        m.Always(Posedge(clk))(
+            If(rst)(
+                fsm_state(FSM_IDLE),
+                done(0),
+                en(0),
+                en_pop(0),
+                en_local(0)
+            ).Else(
+                en(0),
+                en_pop(0),
+                en_local(0),
+                Case(fsm_state)(
+                    When(FSM_IDLE)(
+                        If(start)(
+                            fsm_state(FSM_WAIT_DATA)
+                        )
+                    ),
+                    When(FSM_WAIT_DATA)(
+                        If(available_queues)(
+                            fsm_state(FSM_PROCESS)
+                        )
+                    ),
+                    When(FSM_PROCESS)(
+                        If(write_fifo_done_masked)(
+                            fsm_state(FSM_DONE)
+                        ).Elif(~available_queues)(
+                            fsm_state(FSM_WAIT_DATA)
+                        ).Else(
+                            en(1),
+                            en_pop(read_fifo_mask),
+                            en_local(1)
+                        )
+                    ),
+                    When(FSM_DONE)(
+                        done(1)
+                    )
+                )
+            )
+        )
+
+        j = m.Genvar('j')
+        genfor = m.GenerateFor(j(0), j < num_pe_io_out, j.inc(), 'genfor_ignore')
+        igc = self.create_ignore_counter()
+        params = [('width', 16)]
+        con = [('clk', clk), ('rst', rst), ('start', en_local),
+               ('limit', write_fifo_ignore[j * 16:(j + 1) * 16]),
+               ('loop_limit', write_fifo_loop_ignore[j * 16:(j + 1) * 16]), ('out', en_push[j])]
+
+        genfor.Instance(igc, 'ignore_counter', params, con)
+
+        initialize_regs(m, {'fsm_state': FSM_IDLE})
+
+        self.cache[name] = m
+        return m
+
+    def create_fecth_data(self):
+        name = 'fecth_data'
+        if name in self.cache.keys():
+            return self.cache[name]
+        m = Module(name)
+        INPUT_DATA_WIDTH = m.Parameter('INPUT_DATA_WIDTH', 512)
+        OUTPUT_DATA_WIDTH = m.Parameter('OUTPUT_DATA_WIDTH', 16)
+
+        clk = m.Input('clk')
+        en = m.Input('en')
+        rst = m.Input('rst')
+
+        available_read = m.Input('available_read')
+        request_read = m.OutputReg('request_read')
+        data_valid = m.Input('data_valid')
+        read_data = m.Input('read_data', INPUT_DATA_WIDTH)
+
+        pop_data = m.Input('pop_data')
+        available_pop = m.OutputReg('available_pop')
+        data_out = m.Output('data_out', OUTPUT_DATA_WIDTH)
+
+        NUM = m.Localparam('NUM', INPUT_DATA_WIDTH / OUTPUT_DATA_WIDTH)
+
+        fsm_read = m.Reg('fsm_read', 2)
+        fsm_control = m.Reg('fsm_control', 2)
+        data = m.Reg('data', INPUT_DATA_WIDTH)
+        buffer = m.Reg('buffer', INPUT_DATA_WIDTH)
+        count = m.Reg('count', NUM)
+        has_buffer = m.Reg('has_buffer')
+        buffer_read = m.Reg('buffer_read')
+        m.EmbeddedCode('')
+        data_out.assign(data[0:OUTPUT_DATA_WIDTH])
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                fsm_read(0),
+                request_read(0),
+                has_buffer(0)
+            ).Else(
+                request_read(0),
+                Case(fsm_read)(
+                    When(0)(
+                        If(available_read & en)(
+                            request_read(1),
+                            fsm_read(1)
+                        )
+                    ),
+                    When(1)(
+                        If(data_valid)(
+                            buffer(read_data),
+                            has_buffer(1),
+                            fsm_read(2)
+                        )
+                    ),
+                    When(2)(
+                        If(buffer_read)(
+                            has_buffer(0),
+                            fsm_read(0)
+                        )
+                    )
+                )
+            )
+        )
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                fsm_control(0),
+                available_pop(0),
+                count(0),
+                buffer_read(0)
+            ).Else(
+                buffer_read(0),
+                Case(fsm_control)(
+                    When(0)(
+                        If(has_buffer)(
+                            data(buffer),
+                            count(1),
+                            buffer_read(1),
+                            available_pop(1),
+                            fsm_control(1)
+                        )
+                    ),
+                    When(1)(
+                        If(pop_data & ~count[NUM - 1])(
+                            count(count << 1),
+                            data(data[OUTPUT_DATA_WIDTH:512])
+                        ),
+                        If(pop_data & count[NUM - 1] & has_buffer)(
+                            count(1),
+                            data(buffer),
+                            buffer_read(1)
+                        ),
+                        If(count[NUM - 1] & pop_data & ~has_buffer)(
+                            count(count << 1),
+                            data(data[OUTPUT_DATA_WIDTH:512]),
+                            available_pop(0),
+                            fsm_control(0)
+                        )
+                    )
+                )
+            )
+        )
+
+        initialize_regs(m)
+
+        self.cache[name] = m
+        return m
+
+    def create_dispath_data(self):
+        name = 'dispath_data'
+        if name in self.cache.keys():
+            return self.cache[name]
+
+        m = Module(name)
+        INPUT_DATA_WIDTH = m.Parameter('INPUT_DATA_WIDTH', 16)
+        OUTPUT_DATA_WIDTH = m.Parameter('OUTPUT_DATA_WIDTH', 512)
+
+        clk = m.Input('clk')
+        rst = m.Input('rst')
+
+        available_write = m.Input('available_write')
+        request_write = m.OutputReg('request_write')
+        write_data = m.OutputReg('write_data', OUTPUT_DATA_WIDTH)
+        push_data = m.Input('push_data')
+        available_push = m.OutputReg('available_push')
+        data_in = m.Input('data_in', INPUT_DATA_WIDTH)
+
+        NUM = m.Localparam('NUM', OUTPUT_DATA_WIDTH / INPUT_DATA_WIDTH)
+        m.EmbeddedCode('')
+        fsm_control = m.Reg('fsm_control', 2)
+        buffer1 = m.Reg('buffer1', OUTPUT_DATA_WIDTH)
+        buffer2 = m.Reg('buffer2', OUTPUT_DATA_WIDTH)
+        count1 = m.Reg('count1', NUM)
+        count2 = m.Reg('count2', NUM)
+        request_write1 = m.Reg('request_write1')
+        request_write2 = m.Reg('request_write2')
+        request_write11 = m.Reg('request_write11')
+        request_write22 = m.Reg('request_write22')
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                request_write(0),
+                request_write11(0),
+                request_write22(0)
+            ).Else(
+                request_write11(request_write1),
+                request_write22(request_write2),
+                request_write(request_write11 | request_write22),
+                If(request_write11)(
+                    write_data(buffer1)
+                ).Elif(request_write22)(
+                    write_data(buffer2)
+                )
+            )
+        )
+        m.Always(Posedge(clk))(
+            If(rst)(
+                available_push(1),
+                fsm_control(0),
+                count1(1),
+                count2(1),
+                request_write1(0),
+                request_write2(0),
+            ).Else(
+                request_write1(0),
+                request_write2(0),
+
+                Case(fsm_control)(
+                    When(0)(
+                        If(push_data)(
+                            buffer1(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
+                                       buffer1 >> INPUT_DATA_WIDTH)),
+                            count1(count1 << 1)
+                        ),
+                        If(count1[NUM - 1] & push_data)(
+                            fsm_control(1)
+                        )
+                    ),
+                    When(1)(
+                        If(available_write)(
+                            count1(1),
+                            request_write1(1),
+                            available_push(1)
+                        ),
+                        If(available_write & available_push)(
+                            fsm_control(2)
+                        ),
+                        If(available_write & ~available_push)(
+                            fsm_control(3)
+                        ),
+                        If(push_data)(
+                            buffer2(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
+                                       buffer2 >> INPUT_DATA_WIDTH)),
+                            count2(count2 << 1)
+                        ),
+                        If(count2[NUM - 2] & push_data & ~available_write)(
+                            available_push(0)
+                        )
+                    ),
+                    When(2)(
+                        If(push_data)(
+                            buffer2(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
+                                       buffer2 >> INPUT_DATA_WIDTH)),
+                            count2(count2 << 1)
+                        ),
+                        If(count2[NUM - 1] & push_data)(
+                            fsm_control(3)
+                        )
+                    ),
+                    When(3)(
+                        If(available_write)(
+                            request_write2(1),
+                            available_push(1),
+                            count2(1)
+                        ),
+                        If(available_write & available_push)(
+                            fsm_control(0)
+                        ),
+                        If(available_write & ~available_push)(
+                            fsm_control(1)
+                        ),
+                        If(push_data)(
+                            buffer1(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
+                                       buffer1 >> INPUT_DATA_WIDTH)),
+                            count1(count1 << 1)
+                        ),
+                        If(count1[NUM - 2] & push_data & ~available_write)(
+                            available_push(0)
+                        )
+                    )
+                )
+            )
+        )
+        initialize_regs(m)
+        self.cache[name] = m
+        return m
+
+    def create_ignore_counter(self):
+        name = 'ignore_counter'
+        if name in self.cache.keys():
+            return self.cache[name]
+        m = Module(name)
+        width = m.Parameter('width', 32)
+
+        clk = m.Input('clk')
+        rst = m.Input('rst')
+        start = m.Input('start')
+        limit = m.Input('limit', width)
+        loop_limit = m.Input('loop_limit', width)
+        out = m.OutputReg('out')
+
+        count = m.Reg('count', width)
+        fsm = m.Reg('fsm')
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                count(1),
+                out(0),
+                fsm(0)
+            ).Else(
+                out(0),
+                If(start)(
+                    Case(fsm)(
+                        When(0)(
+                            If(count == limit)(
+                                out(1),
+                                count(1),
+                                fsm(1)
+                            ).Else(
+                                count.inc()
+                            )
+                        ),
+                        When(1)(
+                            If(count == loop_limit)(
+                                out(1),
+                                count(1)
+                            ).Else(
+                                count.inc()
+                            )
+                        )
+                    )
+                )
+            )
+        )
+        initialize_regs(m)
+        self.cache[name] = m
+        return m
+
+    def create_memory_rom_control(self):
+        name = 'mem_rom_control'
+        if name in self.cache.keys():
+            return self.cache[name]
+        m = Module(name)
+        file = m.Parameter('file', 'file.txt')
+        data_width = m.Parameter('data_width', 512)
+        addr_width = m.Parameter('addr_width', 16)
+        clk = m.Input('clk')
+        rst = m.Input('rst')
+        re = m.Input('re')
+
+        available = m.OutputReg('available')
+        valid = m.OutputReg('valid')
+        dout = m.Output('dout', data_width)
+        done = m.OutputReg('done')
+
+        count = m.Reg('count', addr_width + 1)
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                count(0),
+                available(0),
+                valid(0),
+                done(0)
+            ).Else(
+                done(0),
+                valid(0),
+                available(0),
+                If(re)(
+                    valid(1),
+                    count.inc(),
+                ),
+                If(count >= Power(2, addr_width))(
+                    done(1)
+                ).Else(
+                    available(1)
+                )
+            )
+        )
+
+        params = [('init_file', file), ('data_width', data_width), ('addr_width', addr_width)]
+        con = [('clk', clk), ('we', Int(0, 1, 2)), ('re', re), ('raddr', count[0:addr_width]),
+               ('waddr', count[0:addr_width]),
+               ('din', Repeat(Int(0, 1, 2), data_width)),
+               ('dout', dout)]
+        mem = self.create_memory()
+        m.Instance(mem, 'mem_rom', params, con)
+
+        initialize_regs(m)
+        self.cache[name] = m
+
+        return m
+
+    def create_acc_reset(self):
+        name = 'acc_reset'
+        if name in self.cache.keys():
+            return self.cache[name]
+
+        m = Module(name)
+        width = m.Parameter('width', 32)
+
+        clk = m.Input('clk')
+        rst = m.Input('rst')
+        start = m.Input('start')
+        limit = m.Input('limit', width)
+        out = m.OutputReg('out')
+
+        count = m.Reg('count', width)
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                count(1),
+                out(0)
+            ).Else(
+                out(0),
+                If(start)(
+                    If(count == limit)(
+                        out(1),
+                        count(1),
+                    ).Else(
+                        count.inc()
+                    )
+                )
+            )
+        )
+        initialize_regs(m)
         self.cache[name] = m
         return m

@@ -1,7 +1,9 @@
 import argparse
+import json
+
 from cgra import Cgra
 from cgra_architectures import create_cgra
-from cgra_assembly import CgraAssembly
+from cgra_assembler import CgraAssembler
 
 
 def create_args():
@@ -16,13 +18,14 @@ def create_args():
                         help='Number of inputs and to be routed to outputs,\
                          0 only the output of the ALU is sent to outputs.')
     parser.add_argument('--acc', help='This flag adding an accumulator to all PE.', action="store_true")
-    parser.add_argument('--data_width', help='CGRA data width.', type=int, default=8)
+    parser.add_argument('--data_width', help='CGRA data width bits.', type=int, default=8)
     parser.add_argument('--conf_bus_width', help='CGRA configuration bus data width.', type=int, default=8)
     parser.add_argument('-a', '--assembly', help='Assembly input file.', type=str)
     parser.add_argument('-c', '--compile', help='Compile assembly file to CGRA bitstream.', action="store_true")
     parser.add_argument('-j', '--json', help='Architecture JSON description file.', type=str)
     parser.add_argument('-b', '--bitstream', help='Bitstream output file.', type=str)
     parser.add_argument('-v', '--verilog', help='Verilog output file.', type=str)
+    parser.add_argument('--emit-json', help='Emit JSON arch file.', action="store_true")
 
     args = parser.parse_args()
 
@@ -44,6 +47,10 @@ def main():
                     json_str = create_cgra(args.arch, (n, m), isa, args.routes, args.fifos, args.acc, args.data_width,
                                            args.conf_bus_width)
                     cgra.load_from_string(json_str)
+                    if args.emit:
+                        with open('cgra.json', 'w') as f:
+                            f.write(json.dumps(json_str))
+                            f.close()
                 else:
                     raise Exception('Missing isa parameter.')
             else:
@@ -54,7 +61,7 @@ def main():
             elif not args.bitstream:
                 Exception('Missing bitstream file parameter.')
             else:
-                ca = CgraAssembly(cgra, args.assembly, args.bitstream)
+                ca = CgraAssembler(cgra, args.assembly, args.bitstream)
                 ca.compile()
 
         if args.verilog:

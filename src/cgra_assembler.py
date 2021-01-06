@@ -1,17 +1,34 @@
-from cgra_configuration import CgraConfiguration
 import re
 
+from cgra_configuration import CgraConfiguration
 
-class CgraAssembly:
-    def __init__(self, cgra, asm_file, outputfile):
+
+class CgraAssembler:
+    def __init__(self, cgra, asm_file, output_file=None):
         self.cgra = cgra
         self.cc = CgraConfiguration(cgra)
         self.asm_file = asm_file
-        self.outputfile = outputfile
+        self.output_file = output_file
         self.alu_inst = {}
         self.routes_inst = {}
         self.const = []
+        self.accumulator = []
         self.last_error = ''
+        self.used_inputs = []
+        self.used_outputs = []
+        self.ostream_ignore = []
+        self.ostream_ignore_loop = []
+
+    def reset(self):
+        self.alu_inst.clear()
+        self.routes_inst.clear()
+        self.const.clear()
+        self.accumulator.clear()
+        self.last_error = ''
+        self.used_inputs.clear()
+        self.used_outputs.clear()
+        self.ostream_ignore.clear()
+        self.ostream_ignore_loop.clear()
 
     def parse(self):
         f = open(self.asm_file)
@@ -20,6 +37,7 @@ class CgraAssembly:
         i = 1
         self.last_error = ''
         for line in lines:
+            line = line.split('//')[0]
             if line and line[0] != '#':
                 line = re.sub(' +', ' ', line)
                 tokens = line.split(' ')
@@ -30,6 +48,10 @@ class CgraAssembly:
                     else:
                         self.last_error = 'line %d: %s' % (i, v)
                         return
+                elif tokens[0] == 'set':
+                    r, v = self.decode_set_inst(i, tokens)
+                    if not r:
+                        self.last_error = 'line %d: %s' % (i, v)
                 else:
                     r, v = self.decode_alu_inst(i, tokens)
                     if r:
@@ -39,6 +61,23 @@ class CgraAssembly:
                         return
             i += 1
 
+    def decode_set_inst(self, line, inst):
+        try:
+            val = max(int(inst[3]), 1)
+            if inst[2] == '$ostream_ignore':
+                val *= 3  # 3 é o pipeline atual da alu dos PEs.
+                self.ostream_ignore.append((line, int(inst[1][1:]), val))
+            elif inst[2] == '$ostream_loop':
+                self.ostream_ignore_loop.append((line, int(inst[1][1:]), val))
+            elif inst[2] == '$accumulator':
+                self.accumulator.append((line, int(inst[1][1:]), val))
+            else:
+                return False, 'Invalid argument.'
+        except Exception as e:
+            return False, str(e)
+
+        return True, ''
+
     def decode_alu_inst(self, line, inst):
         try:
             op = inst[0]
@@ -46,6 +85,7 @@ class CgraAssembly:
             alu_src = []
             delays = []
             tok = inst[2:]
+            is_istream = False
             for j in range(len(tok)):
                 i = tok[j]
                 if '#' in i:
@@ -53,6 +93,8 @@ class CgraAssembly:
                 else:
                     if 'alu' in i or 'istream' in i or 'acc' in i:
                         alu_src.append(i[1:])
+                        if 'istream' in i:
+                            is_istream = True
                     elif '$' in i:
                         alu_src.append(int(i[1:]))
                     else:
@@ -65,6 +107,8 @@ class CgraAssembly:
 
         except Exception as e:
             return False, str(e)
+        if is_istream:
+            self.used_inputs.append(pe)
 
         return True, [pe, op, alu_src, delays]
 
@@ -80,19 +124,22 @@ class CgraAssembly:
             else:
                 dst = int(inst[3][1:])
         except Exception as e:
-            return False, str(e)
+            return None, str(e)
 
-        return True, [pe, {src: dst}]
+        if dst == 'ostream':
+            self.used_outputs.append(pe)
+        return True, [pe, {dst: src}]
 
     def compile(self):
+        self.reset()
         self.parse()
-        bitstream = ''
+        machine_code = ''
         if self.last_error == '':
             for line, conf in self.alu_inst.items():
                 r, v = self.cc.create_alu_conf(conf[0], conf[1], conf[2], conf[3])
                 if r:
                     for c in v:
-                        bitstream += c + '\n'
+                        machine_code += c + '\n'
                 else:
                     self.last_error = 'line %d: %s' % (line, v)
                     break
@@ -101,17 +148,27 @@ class CgraAssembly:
                     r, v = self.cc.create_reset_conf(conf[0])
                     if r:
                         for c in v:
-                            bitstream += c + '\n'
+                            machine_code += c + '\n'
                     else:
                         self.last_error = 'line %d: %s' % (line, v)
                         break
 
         if self.last_error == '':
-            for line, id, const in self.const:
-                r, v = self.cc.create_const_conf(id, const)
+            for line, i, const in self.const:
+                r, v = self.cc.create_const_conf(i, const)
                 if r:
                     for c in v:
-                        bitstream += c + '\n'
+                        machine_code += c + '\n'
+                else:
+                    self.last_error = 'line %d: %s' % (line, v)
+                    break
+
+        if self.last_error == '':
+            for line, i, acc in self.accumulator:
+                r, v = self.cc.create_acc_reset_conf(i, acc)
+                if r:
+                    for c in v:
+                        machine_code += c + '\n'
                 else:
                     self.last_error = 'line %d: %s' % (line, v)
                     break
@@ -124,23 +181,23 @@ class CgraAssembly:
                 else:
                     routing[c[0]] = c[1]
 
-            for line, c in self.routes_inst.items():
-                r, v = self.cc.create_router_conf(c[0], routing[c[0]])
+            for line, co in self.routes_inst.items():
+                r, v = self.cc.create_router_conf(co[0], routing[co[0]])
                 if r:
                     for c in v:
-                        bitstream += c + '\n'
+                        machine_code += c + '\n'
                 else:
                     self.last_error = 'line %d: %s' % (line, v)
                     break
 
         if self.last_error:
             print('Compile error on %s' % self.last_error)
-            return False
+            return None
 
-        f = open(self.outputfile, 'w')
-        f.write(bitstream[:-1])
-        f.close()
+        if self.output_file:
+            f = open(self.output_file, 'w')
+            f.write(machine_code[:-1])
+            f.close()
+            print('Build succeeded, output file save in %s' % self.output_file)
 
-        print('Build succeeded, output file save in %s' % self.outputfile)
-
-        return True
+        return machine_code[:-1]

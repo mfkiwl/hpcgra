@@ -1,8 +1,9 @@
 import math
-import numpy as np
-from veriloggen import *
 import re
 import subprocess
+
+import numpy as np
+from veriloggen import *
 
 
 def bits(n):
@@ -110,3 +111,7 @@ def split_modules(str_modules):
             m = m + '\n\nendmodule'
             modules[name] = m
     return modules
+
+
+def to_hex(val, bits):
+    return format(val, '0%dx' % (bits // 4))

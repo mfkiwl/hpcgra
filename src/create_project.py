@@ -1,7 +1,11 @@
 import argparse
+import traceback
+
 from veriloggen import *
+
 from cgra import Cgra
-from create_top_level_module import create_top_level_synth, create_top_level_sim
+from cgra_accelerator import CgraAcc
+from create_testbench_module import create_testbench_synth, create_testbench_sim
 from utils import commands_getoutput, split_modules
 
 
@@ -33,29 +37,29 @@ def main():
 
     if args.verilog:
         args.verilog = running_path + '/' + args.verilog
-        m = from_verilog.read_verilog_module(args.verilog)['cgra']
-        msynth = create_top_level_synth(m)
-        msim = create_top_level_sim(m)
+        m = from_verilog.read_verilog_module(args.verilog)['cgra_acc']
+        msynth = create_testbench_synth(m)
+        msim = create_testbench_sim(m)
 
     elif args.json:
         args.json = running_path + '/' + args.json
-        m = Cgra()
-        m.load_from_file(args.json)
-        m = m.get()
-        msynth = create_top_level_synth(m)
-        msim = create_top_level_sim(m)
-
+        cgra = Cgra()
+        cgra.load_from_file(args.json)
+        cgraAcc = CgraAcc(cgra)
+        msynth = create_testbench_synth(cgraAcc)
+        msim = create_testbench_sim(cgraAcc)
+        m = cgraAcc.get()
     else:
         raise Exception('Missing parameters. Run create_project -h to see all parameters needed')
 
     modules1 = split_modules(msynth.to_verilog())
     modules2 = split_modules(msim.to_verilog())
-    msynth = modules1['top_level_synth']
-    msim = modules2['top_level_sim']
+    msynth = modules1['testbench_synth']
+    msim = modules2['testbench_sim'] + '\n\n' + modules2['mem_rom_control'] + '\n\n' + modules2['memory']
     commands_getoutput('cp -r %s/resources/template.prj %s/%s' % (hpcgra_root, args.output, args.name))
     m.to_verilog('%s/%s/src/%s.v' % (args.output, args.name, m.name))
-    write_file('%s/%s/src/top_level_synth.v' % (args.output, args.name), msynth)
-    write_file('%s/%s/src/top_level_sim.v' % (args.output, args.name), msim)
+    write_file('%s/%s/src/testbench_synth.v' % (args.output, args.name), msynth)
+    write_file('%s/%s/src/testbench_sim.v' % (args.output, args.name), msim)
     commands_getoutput(
         'rm -rf %s/src/parser.out %s/src/parsetab.py %s/src/__pycache__' % (hpcgra_root, hpcgra_root, hpcgra_root))
     print('Project successfully created in %s/%s' % (args.output, args.name))
@@ -66,3 +70,4 @@ if __name__ == '__main__':
         main()
     except Exception as e:
         print(e)
+        traceback.print_exc()
