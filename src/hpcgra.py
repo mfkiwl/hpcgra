@@ -20,11 +20,7 @@ def create_args():
     parser.add_argument('--acc', help='This flag adding an accumulator to all PE.', action="store_true")
     parser.add_argument('--data_width', help='CGRA data width bits.', type=int, default=8)
     parser.add_argument('--conf_bus_width', help='CGRA configuration bus data width.', type=int, default=8)
-    parser.add_argument('-a', '--assembly', help='Assembly input file.', type=str)
-    parser.add_argument('-c', '--compile', help='Compile assembly file to CGRA bitstream.', action="store_true")
     parser.add_argument('-j', '--json', help='Architecture JSON description file.', type=str)
-    parser.add_argument('-b', '--bitstream', help='Bitstream output file.', type=str)
-    parser.add_argument('-v', '--verilog', help='Verilog output file.', type=str)
     parser.add_argument('--emit-json', help='Emit JSON arch file.', action="store_true")
 
     args = parser.parse_args()
@@ -55,14 +51,7 @@ def main():
                     raise Exception('Missing isa parameter.')
             else:
                 raise Exception('Missing shape parameter.')
-        if args.compile:
-            if not args.assembly:
-                Exception('Missing assembly file parameter.')
-            elif not args.bitstream:
-                Exception('Missing bitstream file parameter.')
-            else:
-                ca = CgraAssembler(cgra, args.assembly, args.bitstream)
-                ca.compile()
+
 
         if args.verilog:
             cgra.get().to_verilog(args.verilog)

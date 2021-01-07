@@ -63,6 +63,3 @@ class Bitstream:
             f.write(self.initial_conf)
             f.close()
 
-
-bitstream = Bitstream('../test/cgra.json', '../test/vet_sum.asm')
-bitstream.save('../test/vet_sum.bit')

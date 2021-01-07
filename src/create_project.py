@@ -4,7 +4,7 @@ import traceback
 from veriloggen import *
 
 from cgra import Cgra
-from cgra_accelerator import CgraAcc
+from cgra_accelerator import CgraAccelerator
 from create_testbench_module import create_testbench_synth, create_testbench_sim
 from utils import commands_getoutput, split_modules
 
@@ -17,8 +17,6 @@ def write_file(name, string):
 
 def create_args():
     parser = argparse.ArgumentParser('create_project -h')
-
-    parser.add_argument('-v', '--verilog', help='Verilog file of CGRA', type=str)
     parser.add_argument('-j', '--json', help='CGRA architecture description JSON file', type=str)
     parser.add_argument('-n', '--name', help='Project name', type=str, default='a.prj')
     parser.add_argument('-o', '--output', help='Project location', type=str, default='.')
@@ -35,17 +33,11 @@ def main():
     if args.output == '.':
         args.output = running_path
 
-    if args.verilog:
-        args.verilog = running_path + '/' + args.verilog
-        m = from_verilog.read_verilog_module(args.verilog)['cgra_acc']
-        msynth = create_testbench_synth(m)
-        msim = create_testbench_sim(m)
-
-    elif args.json:
+    if args.json:
         args.json = running_path + '/' + args.json
         cgra = Cgra()
         cgra.load_from_file(args.json)
-        cgraAcc = CgraAcc(cgra)
+        cgraAcc = CgraAccelerator(cgra)
         msynth = create_testbench_synth(cgraAcc)
         msim = create_testbench_sim(cgraAcc)
         m = cgraAcc.get()
