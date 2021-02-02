@@ -62,4 +62,3 @@ class Bitstream:
         with open(filename, 'w') as f:
             f.write(self.initial_conf)
             f.close()
-

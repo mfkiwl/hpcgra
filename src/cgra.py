@@ -4,7 +4,7 @@ from veriloggen import *
 
 from cgra_alu_operations import CgraAluOperations
 from components import Components
-from utils import bits, initialize_regs, get_id
+from utils import bits, initialize_regs, create_conf_path
 
 
 class Cgra:
@@ -43,20 +43,21 @@ class Cgra:
         self.__module.to_verilog(filename)
 
     def get(self):
-        self.data_width = self.arch['data_width']
-        self.pe_id_width = bits(len(self.arch['pe'])) + 1
-        self.conf_bus_width = self.arch['conf_bus_width']
-        self.input_ids.clear()
-        self.output_ids.clear()
-        for pe in self.arch['pe']:
-            self.array_pe[pe['id']] = self.__make_pe(pe)
-            self.array_pe_arch[pe['id']] = pe
-            if pe['type'] == 'input' or pe['type'] == 'inout':
-                self.input_ids.append(pe['id'])
-            if pe['type'] == 'output' or pe['type'] == 'inout':
-                self.output_ids.append(pe['id'])
+        if not self.__module:
+            self.data_width = self.arch['data_width']
+            self.pe_id_width = bits(len(self.arch['pe'])) + 1
+            self.conf_bus_width = self.arch['conf_bus_width']
+            self.input_ids.clear()
+            self.output_ids.clear()
+            for pe in self.arch['pe']:
+                self.array_pe[pe['id']] = self.__make_pe(pe)
+                self.array_pe_arch[pe['id']] = pe
+                if pe['type'] == 'input' or pe['type'] == 'inout':
+                    self.input_ids.append(pe['id'])
+                if pe['type'] == 'output' or pe['type'] == 'inout':
+                    self.output_ids.append(pe['id'])
 
-        self.__module = self.__make_cgra()
+            self.__module = self.__make_cgra()
         return self.__module
 
     def __make_cgra(self):
@@ -80,6 +81,7 @@ class Cgra:
         wires['conf_bus_reg_in'] = m.Wire('conf_bus_reg_in', self.conf_bus_width, len(self.array_pe))
         wires['conf_bus_reg_out'] = m.Wire('conf_bus_reg_out', self.conf_bus_width, len(self.array_pe))
         reg_pipe_conf_bus = self.components.create_register_pipeline()
+
         for pe in self.array_pe:
             param = [('num_register', 1), ('width', self.conf_bus_width)]
             w = wires['conf_bus_reg_in'][pe]
@@ -92,7 +94,6 @@ class Cgra:
             inputs = []
             neighbors = self.array_pe_arch[pe]['neighbors']
             neighbors.sort()
-
             ports = self.array_pe[pe].get_ports()
             params = [('id', pe + 1)]
             con = [('clk', clk), ('en', en), ('conf_bus', wires['conf_bus_reg_out'][pe])]
@@ -116,16 +117,21 @@ class Cgra:
 
             m.Instance(self.array_pe[pe], "pe_%d" % pe, params, con)
 
-        l, c = self.arch['shape']
-        for i in range(l):
-            if i == 0:
-                wires['conf_bus_reg_in'][0].assign(conf_bus)
-            else:
-                wires['conf_bus_reg_in'][get_id(i, 0, c)].assign(wires['conf_bus_reg_out'][get_id(i - 1, 0, c)])
+        # l, c = self.arch['shape']
+        # for i in range(l):
+        #     if i == 0:
+        #         wires['conf_bus_reg_in'][0].assign(conf_bus)
+        #     else:
+        #         wires['conf_bus_reg_in'][get_id(i, 0, c)].assign(wires['conf_bus_reg_out'][get_id(i - 1, 0, c)])
+        #
+        # for i in range(l):
+        #     for j in range(1, c):
+        #         wires['conf_bus_reg_in'][get_id(i, j, c)].assign(wires['conf_bus_reg_out'][get_id(i, j - 1, c)])
 
-        for i in range(l):
-            for j in range(1, c):
-                wires['conf_bus_reg_in'][get_id(i, j, c)].assign(wires['conf_bus_reg_out'][get_id(i, j - 1, c)])
+        wires['conf_bus_reg_in'][0].assign(conf_bus)
+        p = create_conf_path(self.arch)
+        for i, j in p:
+            wires['conf_bus_reg_in'][j].assign(wires['conf_bus_reg_out'][i])
 
         return m
 

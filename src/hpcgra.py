@@ -3,7 +3,6 @@ import json
 
 from cgra import Cgra
 from cgra_architectures import create_cgra
-from cgra_assembler import CgraAssembler
 
 
 def create_args():
@@ -21,7 +20,8 @@ def create_args():
     parser.add_argument('--data_width', help='CGRA data width bits.', type=int, default=8)
     parser.add_argument('--conf_bus_width', help='CGRA configuration bus data width.', type=int, default=8)
     parser.add_argument('-j', '--json', help='Architecture JSON description file.', type=str)
-    parser.add_argument('--emit-json', help='Emit JSON arch file.', action="store_true")
+    parser.add_argument('--emit', help='Emit JSON arch file.', action="store_true")
+    parser.add_argument('-v', '--verilog', help='Verilog outputfile.', type=str, default=None)
 
     args = parser.parse_args()
 
@@ -51,7 +51,6 @@ def main():
                     raise Exception('Missing isa parameter.')
             else:
                 raise Exception('Missing shape parameter.')
-
 
         if args.verilog:
             cgra.get().to_verilog(args.verilog)

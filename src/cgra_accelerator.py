@@ -6,20 +6,24 @@ from components import Components
 class CgraAccelerator:
     def __init__(self, cgra):
         self.cgra = cgra
+        self.num_in = len(self.cgra.input_ids)
+        self.num_out = len(self.cgra.output_ids)
+
+    def get_num_in(self):
+        return self.num_in
+
+    def get_num_out(self):
+        return self.num_out
 
     def get(self):
         return self.create_cgra_accelerator()
 
     def create_cgra_accelerator(self):
-        l, c = self.cgra.arch['shape']
-        num_in = len(self.cgra.input_ids)
-        num_out = len(self.cgra.output_ids)
-
         comp = Components()
         fd = comp.create_fecth_data()
         dd = comp.create_dispath_data()
-        control_conf = comp.create_control_conf(self.cgra.id, num_in, num_out, l)
-        control_exec = comp.create_control_exec(self.cgra.id, num_in, num_out)
+        control_conf = comp.create_control_conf(self.cgra.id, self.num_in, self.num_out, len(self.cgra.arch['pe']))
+        control_exec = comp.create_control_exec(self.cgra.id, self.num_in, self.num_out)
 
         m = Module('cgra_acc')
         INTERFACE_DATA_WIDTH = m.Parameter('INTERFACE_DATA_WIDTH', 512)
@@ -27,44 +31,44 @@ class CgraAccelerator:
         clk = m.Input('clk')
         rst = m.Input('rst')
         start = m.Input('start')
-        acc_user_done_rd_data = m.Input('acc_user_done_rd_data', num_in)
-        acc_user_done_wr_data = m.Input('acc_user_done_wr_data', num_out)
-        acc_user_available_read = m.Input('acc_user_available_read', num_in)
-        acc_user_request_read = m.Output('acc_user_request_read', num_in)
-        acc_user_read_data_valid = m.Input('acc_user_read_data_valid', num_in)
-        acc_user_read_data = m.Input('acc_user_read_data', INTERFACE_DATA_WIDTH * num_in)
-        acc_user_available_write = m.Input('acc_user_available_write', num_out)
-        acc_user_request_write = m.Output('acc_user_request_write', num_out)
-        acc_user_write_data = m.Output('acc_user_write_data', INTERFACE_DATA_WIDTH * num_out)
+        acc_user_done_rd_data = m.Input('acc_user_done_rd_data', self.num_in)
+        acc_user_done_wr_data = m.Input('acc_user_done_wr_data', self.num_out)
+        acc_user_available_read = m.Input('acc_user_available_read', self.num_in)
+        acc_user_request_read = m.Output('acc_user_request_read', self.num_in)
+        acc_user_read_data_valid = m.Input('acc_user_read_data_valid', self.num_in)
+        acc_user_read_data = m.Input('acc_user_read_data', INTERFACE_DATA_WIDTH * self.num_in)
+        acc_user_available_write = m.Input('acc_user_available_write', self.num_out)
+        acc_user_request_write = m.Output('acc_user_request_write', self.num_out)
+        acc_user_write_data = m.Output('acc_user_write_data', INTERFACE_DATA_WIDTH * self.num_out)
         acc_user_done = m.Output('acc_user_done')
 
-        request_read = m.Wire('request_read', num_in)
+        request_read = m.Wire('request_read', self.num_in)
         conf_control_req_rd_data = m.Wire('conf_control_req_rd_data')
         en = m.Wire('en')
-        en_pop = m.Wire('en_pop', num_in)
-        fifo_in_data = m.Wire('fifo_in_data', self.cgra.data_width * num_in)
-        available_pop = m.Wire('available_pop', num_in)
-        en_push = m.Wire('en_push', num_out)
-        fifo_out_data = m.Wire('fifo_out_data', self.cgra.data_width * num_out)
-        available_push = m.Wire('available_push', num_out)
+        en_pop = m.Wire('en_pop', self.num_in)
+        fifo_in_data = m.Wire('fifo_in_data', self.cgra.data_width * self.num_in)
+        available_pop = m.Wire('available_pop', self.num_in)
+        en_push = m.Wire('en_push', self.num_out)
+        fifo_out_data = m.Wire('fifo_out_data', self.cgra.data_width * self.num_out)
+        available_push = m.Wire('available_push', self.num_out)
         conf_out_bus = m.Wire('conf_out_bus', self.cgra.conf_bus_width)
-        read_fifo_mask = m.Wire('read_fifo_mask', num_in)
-        write_fifo_mask = m.Wire('write_fifo_mask', num_out)
-        write_fifo_ignore = m.Wire('write_fifo_ignore', num_out * 16)
-        write_fifo_loop_ignore = m.Wire('write_fifo_loop_ignore', num_out * 16)
+        read_fifo_mask = m.Wire('read_fifo_mask', self.num_in)
+        write_fifo_mask = m.Wire('write_fifo_mask', self.num_out)
+        write_fifo_ignore = m.Wire('write_fifo_ignore', self.num_out * 16)
+        write_fifo_loop_ignore = m.Wire('write_fifo_loop_ignore', self.num_out * 16)
 
         conf_done = m.Wire('conf_done')
         genv = m.Genvar('genv')
-        if num_in > 1:
+        if self.num_in > 1:
             acc_user_request_read[1:].assign(request_read[1:])
         acc_user_request_read[0].assign(request_read[0] | conf_control_req_rd_data)
 
-        genInstFor1 = m.GenerateFor(genv(0), genv < num_in, genv.inc(), 'inst_fecth_data')
-        genInstFor2 = m.GenerateFor(genv(0), genv < num_out, genv.inc(), 'inst_dispath_data')
+        genInstFor1 = m.GenerateFor(genv(0), genv < self.num_in, genv.inc(), 'inst_fecth_data')
+        genInstFor2 = m.GenerateFor(genv(0), genv < self.num_out, genv.inc(), 'inst_dispath_data')
 
         params = [('INPUT_DATA_WIDTH', INTERFACE_DATA_WIDTH), ('OUTPUT_DATA_WIDTH', self.cgra.data_width)]
         con = [
-            ('clk', clk), ('rst', rst), ('en', conf_done), ('available_read', acc_user_available_read[genv]),
+            ('clk', clk), ('rst', rst), ('start', conf_done), ('available_read', acc_user_available_read[genv]),
             ('request_read', request_read[genv]), ('data_valid', acc_user_read_data_valid[genv]),
             ('read_data', acc_user_read_data[Mul(genv, INTERFACE_DATA_WIDTH):Mul(genv + 1, INTERFACE_DATA_WIDTH)]),
             ('pop_data', en_pop[genv]),
@@ -105,6 +109,7 @@ class CgraAccelerator:
                ('write_fifo_loop_ignore', write_fifo_loop_ignore),
                ('available_pop', available_pop),
                ('available_push', available_push),
+               ('read_fifo_done', acc_user_done_rd_data),
                ('write_fifo_done', acc_user_done_wr_data),
                ('en', en),
                ('en_pop', en_pop),
@@ -114,9 +119,7 @@ class CgraAccelerator:
         m.Instance(control_exec, 'control_exec', params, con)
 
         params = []
-        con = [
-            ('clk', clk), ('en', en), ('conf_bus', conf_out_bus)
-        ]
+        con = [('clk', clk), ('en', en), ('conf_bus', conf_out_bus)]
 
         j = 0
         for i in self.cgra.input_ids:

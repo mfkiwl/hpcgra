@@ -1,6 +1,7 @@
 import math
 import subprocess
 
+import networkx as nx
 import numpy as np
 from veriloggen import *
 
@@ -114,3 +115,29 @@ def split_modules(str_modules):
 
 def to_hex(val, bits):
     return format(val, '0%dx' % (bits // 4))
+
+
+def bfs(g):
+    queue = set()
+    visitados = [False] * g.number_of_nodes()
+    queue.add(0)
+    path = []
+    while queue:
+        n = queue.pop()
+        visitados[n] = True
+        for v in g.neighbors(n):
+            if not visitados[v]:
+                path.append((n, v))
+                visitados[v] = True
+                queue.add(v)
+
+    return path
+
+
+def create_conf_path(cgra_arch):
+    G = nx.Graph()
+    for pe in cgra_arch['pe']:
+        for w in pe['neighbors']:
+            G.add_edge(pe['id'], w)
+
+    return bfs(G)

@@ -119,6 +119,109 @@ class Components:
         self.cache[name] = m
         return m
 
+    def create_fifo(self):
+        m = Module('fifo')
+        FIFO_WIDTH = m.Parameter('FIFO_WIDTH', 32)
+        FIFO_DEPTH_BITS = m.Parameter('FIFO_DEPTH_BITS', 8)
+        FIFO_ALMOSTFULL_THRESHOLD = m.Parameter('FIFO_ALMOSTFULL_THRESHOLD', Power(2, FIFO_DEPTH_BITS) - 4)
+        FIFO_ALMOSTEMPTY_THRESHOLD = m.Parameter('FIFO_ALMOSTEMPTY_THRESHOLD', 2)
+
+        clk = m.Input('clk')
+        rst = m.Input('rst')
+        we = m.Input('we')
+        din = m.Input('din', FIFO_WIDTH)
+        re = m.Input('re')
+        valid = m.OutputReg('valid')
+        dout = m.OutputReg('dout', FIFO_WIDTH)
+        empty = m.OutputReg('empty')
+        almostempty = m.OutputReg('almostempty')
+        full = m.OutputReg('full')
+        almostfull = m.OutputReg('almostfull')
+        count = m.OutputReg('count', FIFO_DEPTH_BITS + 1)
+
+        rp = m.Reg('rp', FIFO_DEPTH_BITS)
+        wp = m.Reg('wp', FIFO_DEPTH_BITS)
+        mem = m.Reg('mem', FIFO_WIDTH, Power(2, FIFO_DEPTH_BITS))
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                empty(Int(1, 1, 2)),
+                almostempty(Int(1, 1, 2)),
+                full(Int(0, 1, 2)),
+                almostfull(Int(0, 1, 2)),
+                rp(0),
+                wp(0),
+                count(0)
+            ).Else(
+                Case(Cat(we, re))(
+                    When(Int(3, 2, 2))(
+                        rp(rp + 1),
+                        wp(wp + 1),
+                    ),
+                    When(Int(2, 2, 2))(
+                        If(~full)(
+                            wp(wp + 1),
+                            count(count + 1),
+                            empty(Int(0, 1, 2)),
+                            If(count == (FIFO_ALMOSTEMPTY_THRESHOLD - 1))(
+                                almostempty(Int(0, 1, 2))
+                            ),
+                            If(count == Power(2, FIFO_DEPTH_BITS) - 1)(
+                                full(Int(1, 1, 2))
+                            ),
+                            If(count == (FIFO_ALMOSTFULL_THRESHOLD - 1))(
+                                almostfull(Int(1, 1, 2))
+                            )
+                        )
+
+                    ),
+                    When(Int(1, 2, 2))(
+                        If(~empty)(
+                            rp(rp + 1),
+                            count(count - 1),
+                            full(Int(0, 1, 2)),
+                            If(count == FIFO_ALMOSTFULL_THRESHOLD)(
+                                almostfull(Int(0, 1, 2))
+                            ),
+                            If(count == 1)(
+                                empty(Int(1, 1, 2))
+                            ),
+                            If(count == FIFO_ALMOSTEMPTY_THRESHOLD)(
+                                almostempty(Int(1, 1, 2))
+                            )
+
+                        )
+                    ),
+                    When()(
+
+                    )
+
+                )
+            )
+        )
+        m.Always(Posedge(clk))(
+            If(rst)(
+                valid(Int(0, 1, 2))
+            ).Else(
+                valid(Int(0, 1, 2)),
+                If(we == Int(1, 1, 2))(
+                    mem[wp](din)
+                ),
+                If(re == Int(1, 1, 2))(
+                    dout(mem[rp]),
+                    valid(Int(1, 1, 2))
+                )
+            )
+        )
+        m.EmbeddedCode('//synthesis translate_off')
+        m.Always(Posedge(clk))(
+            If(we & full)(EmbeddedCode('$fatal("overflow");')),
+            If(re & empty)(EmbeddedCode('$fatal("underflow");'))
+        )
+        m.EmbeddedCode('//synthesis translate_on')
+
+        return m
+
     def create_elastic_pipeline(self, max_latency):
         name = 'elastic_pipeline_%d' % max_latency
         if name in self.cache.keys():
@@ -249,7 +352,6 @@ class Components:
         return m
 
     def create_control_conf(self, cgra_id, num_pe_io_in, num_pe_io_out, num_cicle_wait_conf_finish):
-
         name = 'cgra%d_control_conf' % cgra_id
         if name in self.cache.keys():
             return self.cache[name]
@@ -320,6 +422,7 @@ class Components:
             ).Else(
                 conf_req_data(0),
                 send_conf(0),
+                done(0),
                 Case(fsm_conf_ctrl)(
                     When(FSM_INIT_CTRL_IDLE)(
                         If(start)(
@@ -375,11 +478,14 @@ class Components:
                     When(FSM_WAIT_ALL_CONF_FINISH)(
                         wait_counter.inc(),
                         If(wait_counter > num_cicle_wait_conf_finish)(
-                            fsm_conf_ctrl(FSM_INIT_CONF_DONE)
+                            fsm_conf_ctrl(FSM_INIT_CONF_DONE),
+                            done(1),
                         )
                     ),
                     When(FSM_INIT_CONF_DONE)(
-                        done(1)
+                        If(~start)(
+                            fsm_conf_ctrl(FSM_INIT_CTRL_IDLE)
+                        )
                     )
                 )
             )
@@ -423,88 +529,135 @@ class Components:
         available_pop = m.Input('available_pop', num_pe_io_in)
         available_push = m.Input('available_push', num_pe_io_out)
 
+        read_fifo_done = m.Input('read_fifo_done', num_pe_io_out)
         write_fifo_done = m.Input('write_fifo_done', num_pe_io_out)
 
-        en = m.OutputReg('en')
-        en_pop = m.OutputReg('en_pop', num_pe_io_in)
+        en = m.Output('en')
+        en_pop = m.Output('en_pop', num_pe_io_in)
         en_push = m.Output('en_push', num_pe_io_out)
-
-        done = m.OutputReg('done')
+        done = m.Output('done')
 
         FSM_IDLE = m.Localparam('FSM_IDLE', 0)
         FSM_PROCESS = m.Localparam('FSM_PROCESS', 1)
-        FSM_DONE = m.Localparam('FSM_DONE', 3)
-        FSM_WAIT_DATA = m.Localparam('FSM_WAIT_DATA', 2)
+        FSM_DONE = m.Localparam('FSM_DONE', 2)
+
         m.EmbeddedCode('')
 
         fsm_state = m.Reg('fsm_state', 2)
+        read_fifo_mask_r = m.Reg('read_fifo_mask_r', num_pe_io_in)
+        write_fifo_mask_r = m.Reg('write_fifo_mask_r', num_pe_io_out)
+        write_fifo_ignore_r = m.Reg('write_fifo_ignore_r', num_pe_io_out * 16)
+        write_fifo_loop_ignore_r = m.Reg('write_fifo_loop_ignore_r', num_pe_io_out * 16)
         available_pop_masked = m.Reg('available_pop_masked', num_pe_io_in)
         available_push_masked = m.Reg('available_push_masked', num_pe_io_out)
+        read_fifo_done_masked = m.Reg('read_fifo_done_masked', num_pe_io_in)
+        write_fifo_done_masked = m.Reg('write_fifo_done_masked', num_pe_io_out)
 
-        available_queues = m.Reg('available_queues')
-        write_fifo_done_masked = m.Reg('write_fifo_done_masked')
-        en_local = m.Reg('en_local')
+        en_r = m.Reg('en_r')
+        en_pop_r = m.Reg('en_pop_r', num_pe_io_in)
+        en_push_r = m.Reg('en_push_r', num_pe_io_out)
+        done_r = m.Reg('done_r')
+        read_fifo_done_r = m.Reg('read_fifo_done_r', num_pe_io_in)
+        write_fifo_done_r = m.Reg('write_fifo_done_r', num_pe_io_out)
+        ignore_counter_out = m.Wire('ignore_counter_out', num_pe_io_out)
+        en_counters = m.Reg('en_counter', num_pe_io_out)
+        start_r = m.Reg('start_r')
+        flag_initial = m.Reg('flag_initial')
+
+        m.EmbeddedCode('')
+        en.assign(en_r)
+        en_pop.assign(en_pop_r)
+        en_push.assign(And(ignore_counter_out, en_push_r))
+        done.assign(done_r)
 
         m.Always(Posedge(clk))(
             If(rst)(
-                available_pop_masked(0),
-                available_push_masked(0),
-                available_queues(0),
-                write_fifo_done_masked(0)
+                start_r(Int(0, 1, 2))
             ).Else(
-                available_pop_masked(available_pop | Unot(read_fifo_mask)),
-                available_push_masked(available_push | Unot(write_fifo_mask)),
-                available_queues(Uand(available_pop_masked & available_push_masked)),
-                write_fifo_done_masked(Uand(write_fifo_done | ~write_fifo_mask))
+                start_r(Mux(start_r, start_r, start))
             )
         )
+
+        m.Always(Posedge(clk))(
+            read_fifo_mask_r(read_fifo_mask),
+            write_fifo_mask_r(write_fifo_mask),
+            write_fifo_ignore_r(write_fifo_ignore),
+            write_fifo_loop_ignore_r(write_fifo_loop_ignore),
+            read_fifo_done_r(read_fifo_done),
+            write_fifo_done_r(write_fifo_done)
+        )
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                available_pop_masked(Repeat(Int(0, 1, 2), num_pe_io_in)),
+                available_push_masked(Repeat(Int(0, 1, 2), num_pe_io_out)),
+                read_fifo_done_masked(Repeat(Int(0, 1, 2), num_pe_io_in)),
+                write_fifo_done_masked(Repeat(Int(0, 1, 2), num_pe_io_out))
+            ).Elif(start_r)(
+                available_pop_masked(Or(available_pop, Unot(read_fifo_mask_r))),
+                available_push_masked(Or(available_push, Unot(write_fifo_mask_r))),
+                write_fifo_done_masked(Or(write_fifo_done_r, Unot(write_fifo_mask_r))),
+                read_fifo_done_masked(Or(read_fifo_done_r, Unot(read_fifo_mask_r)))
+            ).Else(
+                available_pop_masked(Repeat(Int(0, 1, 2), num_pe_io_in)),
+                available_push_masked(Repeat(Int(0, 1, 2), num_pe_io_out)),
+                read_fifo_done_masked(Repeat(Int(0, 1, 2), num_pe_io_in)),
+                write_fifo_done_masked(Repeat(Int(0, 1, 2), num_pe_io_out))
+            )
+        )
+
         m.Always(Posedge(clk))(
             If(rst)(
                 fsm_state(FSM_IDLE),
-                done(0),
-                en(0),
-                en_pop(0),
-                en_local(0)
+                done_r(Int(0, 1, 2)),
+                en_r(Int(0, 1, 2)),
+                en_pop_r(Repeat(Int(0, 1, 2), num_pe_io_in)),
+                en_push_r(Repeat(Int(0, 1, 2), num_pe_io_in)),
+                en_counters(Repeat(Int(0, 1, 2), num_pe_io_out)),
+                flag_initial(Int(0, 1, 2))
             ).Else(
-                en(0),
-                en_pop(0),
-                en_local(0),
+                en_r(Int(0, 1, 2)),
+                en_counters(Repeat(Int(0, 1, 2), num_pe_io_out)),
+                en_pop_r(Repeat(Int(0, 1, 2), num_pe_io_in)),
+                en_push_r(Repeat(Int(0, 1, 2), num_pe_io_out)),
+                done_r(Int(0, 1, 2)),
                 Case(fsm_state)(
                     When(FSM_IDLE)(
                         If(start)(
-                            fsm_state(FSM_WAIT_DATA)
-                        )
-                    ),
-                    When(FSM_WAIT_DATA)(
-                        If(available_queues)(
                             fsm_state(FSM_PROCESS)
                         )
                     ),
                     When(FSM_PROCESS)(
-                        If(write_fifo_done_masked)(
-                            fsm_state(FSM_DONE)
-                        ).Elif(~available_queues)(
-                            fsm_state(FSM_WAIT_DATA)
-                        ).Else(
-                            en(1),
-                            en_pop(read_fifo_mask),
-                            en_local(1)
+                        If(Land(Uand(available_push_masked), Uand(available_pop_masked)))(
+                            en_r(Int(1, 1, 2)),
+                            en_counters(Repeat(Int(1, 1, 2), num_pe_io_out)),
+                            en_pop_r(Repeat(Int(1, 1, 2), num_pe_io_in)),
+                            en_push_r(Repeat(Int(1, 1, 2), num_pe_io_in)),
+                            flag_initial(Int(1, 1, 2))
+                        ).Elif(Uand(write_fifo_done_masked))(
+                            fsm_state(FSM_DONE),
+                            done_r(Int(1, 1, 2))
+                        ).Elif(AndList(Uand(available_push_masked), flag_initial, Uand(read_fifo_done_masked)))(
+                            en_r(Int(1, 1, 2)),
+                            en_push_r(Repeat(Int(1, 1, 2), num_pe_io_out)),
+                            en_counters(Repeat(Int(1, 1, 2), num_pe_io_out))
                         )
                     ),
                     When(FSM_DONE)(
-                        done(1)
+                        If(~start)(
+                            fsm_state(FSM_IDLE)
+                        )
                     )
                 )
             )
         )
-
         j = m.Genvar('j')
         genfor = m.GenerateFor(j(0), j < num_pe_io_out, j.inc(), 'genfor_ignore')
         igc = self.create_ignore_counter()
         params = [('width', 16)]
-        con = [('clk', clk), ('rst', rst), ('start', en_local),
+        con = [('clk', clk), ('rst', rst), ('start', en_counters[j]),
                ('limit', write_fifo_ignore[j * 16:(j + 1) * 16]),
-               ('loop_limit', write_fifo_loop_ignore[j * 16:(j + 1) * 16]), ('out', en_push[j])]
+               ('loop_limit', write_fifo_loop_ignore[j * 16:(j + 1) * 16]), ('out', ignore_counter_out[j])]
 
         genfor.Instance(igc, 'ignore_counter', params, con)
 
@@ -522,7 +675,7 @@ class Components:
         OUTPUT_DATA_WIDTH = m.Parameter('OUTPUT_DATA_WIDTH', 16)
 
         clk = m.Input('clk')
-        en = m.Input('en')
+        start = m.Input('start')
         rst = m.Input('rst')
 
         available_read = m.Input('available_read')
@@ -543,8 +696,18 @@ class Components:
         count = m.Reg('count', NUM)
         has_buffer = m.Reg('has_buffer')
         buffer_read = m.Reg('buffer_read')
+        en = m.Reg('en')
+
         m.EmbeddedCode('')
         data_out.assign(data[0:OUTPUT_DATA_WIDTH])
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                en(Int(0, 1, 2))
+            ).Else(
+                en(Mux(en, en, start))
+            )
+        )
 
         m.Always(Posedge(clk))(
             If(rst)(
@@ -890,3 +1053,4 @@ class Components:
         initialize_regs(m)
         self.cache[name] = m
         return m
+
