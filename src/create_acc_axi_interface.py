@@ -10,23 +10,17 @@ class AccAXIInterface:
 
     def create_app_top(self):
         num_m_axis = self.acc.get_num_in()
-        m = Module('app_top')
-        C_M_AXI_ADDR_WIDTH = m.Parameter('C_M_AXI_ADDR_WIDTH', 12)
+
+        name = 'app_top'
+        if name in self.cache.keys():
+            return self.cache[name]
+
+        m = Module(name)
+        C_M_AXI_ADDR_WIDTH = m.Parameter('C_M_AXI_ADDR_WIDTH', 64)
         C_M_AXI_DATA_WIDTH = m.Parameter('C_M_AXI_DATA_WIDTH', 512)
 
         ap_clk = m.Input('ap_clk')
         ap_rst_n = m.Input('ap_rst_n')
-        ap_start = m.Input('ap_start')
-        ap_idle = m.Input('ap_idle')
-        ap_done = m.Output('ap_done')
-        ap_ready = m.Output('ap_ready')
-        vin_s = [m.Input('in_s%d' % i, 32) for i in range(num_m_axis)]
-        vout_s = [m.Input('out_s%d' % i, 32) for i in range(num_m_axis)]
-        viin = []
-        vout = []
-        for i in range(num_m_axis):
-            viin.append(m.Input('in%d' % i, 64))
-            vout.append(m.Input('out%d' % i, 64))
 
         m_axis_signals = {}
         for i in range(num_m_axis):
@@ -51,15 +45,29 @@ class AccAXIInterface:
             m_axis_signals['m%s_axi_rdata' % n] = m.Input('m%s_axi_rdata' % n, C_M_AXI_DATA_WIDTH)
             m_axis_signals['m%s_axi_rlast' % n] = m.Input('m%s_axi_rlast' % n)
 
-        LP_NUM_CHANNELS = m.Localparam('LP_NUM_CHANNELS', num_m_axis)
+        ap_start = m.Input('ap_start')
+        ap_idle = m.Input('ap_idle')
+        ap_done = m.Output('ap_done')
+        ap_ready = m.Output('ap_ready')
+
+        vin_s = [m.Input('in_s%d' % i, 32) for i in range(num_m_axis)]
+        vout_s = [m.Input('out_s%d' % i, 32) for i in range(num_m_axis)]
+        viin = []
+        vout = []
+        for i in range(num_m_axis):
+            viin.append(m.Input('in%d' % i, 64))
+            vout.append(m.Input('out%d' % i, 64))
+
+        LP_NUM_EXAMPLES = m.Localparam('LP_NUM_EXAMPLES', num_m_axis)
         LP_LENGTH_WIDTH = m.Localparam('LP_LENGTH_WIDTH', 32)
         LP_DW_BYTES = m.Localparam('LP_DW_BYTES', Div(C_M_AXI_DATA_WIDTH, 8))
         LP_AXI_BURST_LEN = m.Localparam('LP_AXI_BURST_LEN',
                                         Mux(Div(4096, LP_DW_BYTES) < 256, Div(4096, LP_DW_BYTES), 256))
+
         LP_LOG_BURST_LEN = m.Localparam('LP_LOG_BURST_LEN', EmbeddedCode("$clog2(LP_AXI_BURST_LEN)"))
-        LP_RD_MAX_OUTSTANDING = m.Localparam('LP_RD_MAX_OUTSTANDING', 3)
-        LP_RD_FIFO_DEPTH = m.Localparam('LP_RD_FIFO_DEPTH', Mul(LP_AXI_BURST_LEN, Add(LP_RD_MAX_OUTSTANDING, 1)))
-        LP_WR_FIFO_DEPTH = m.Localparam('LP_WR_FIFO_DEPTH', EmbeddedCode('LP_AXI_BURST_LEN'))
+        LP_BRAM_DEPTH = m.Localparam('LP_BRAM_DEPTH', 512)
+        LP_RD_MAX_OUTSTANDING = m.Localparam('LP_RD_MAX_OUTSTANDING', Div(LP_BRAM_DEPTH, LP_AXI_BURST_LEN))
+        LP_WR_MAX_OUTSTANDING = m.Localparam('LP_WR_MAX_OUTSTANDING', 32)
 
         m.EmbeddedCode('(* KEEP = "yes" *)')
 
@@ -69,84 +77,46 @@ class AccAXIInterface:
         ap_start_pulse = m.Wire('ap_start_pulse')
         ap_done_r = m.Reg('ap_done_r')
 
-        rd_tvalid = m.Wire('rd_tvalid', LP_NUM_CHANNELS)
-        rd_tready_n = m.Wire('rd_tready_n', LP_NUM_CHANNELS)
-        rd_tdata = m.Wire('rd_tdata', C_M_AXI_DATA_WIDTH, LP_NUM_CHANNELS)
-        rd_fifo_tempty = m.Wire('rd_fifo_tempty', LP_NUM_CHANNELS)
-        ctrl_rd_fifo_prog_full = m.Wire('ctrl_rd_fifo_prog_full', LP_NUM_CHANNELS)
+        rd_ctrl_done = m.Wire('rd_ctrl_done', LP_NUM_EXAMPLES)
+        wr_ctrl_done = m.Wire('wr_ctrl_done', LP_NUM_EXAMPLES)
 
-        wr_fifo_tvalid_n = m.Wire('wr_fifo_tvalid_n', LP_NUM_CHANNELS)
-        wr_fifo_tready = m.Wire('wr_fifo_tready', LP_NUM_CHANNELS)
-        wr_fifo_tdata = m.Wire('wr_fifo_tdata', C_M_AXI_DATA_WIDTH, LP_NUM_CHANNELS)
-        wr_fifo_tfull = m.Wire('wr_fifo_tfull', LP_NUM_CHANNELS)
+        acc_user_done_rd_data = m.Reg('acc_user_done_rd_data', LP_NUM_EXAMPLES)
+        acc_user_done_wr_data = m.Reg('acc_user_done_wr_data', LP_NUM_EXAMPLES)
 
-        iin = m.Wire('in', 64, LP_NUM_CHANNELS)
-        in_s = m.Wire('in_s', 32, LP_NUM_CHANNELS)
-        out = m.Wire('out', 64, LP_NUM_CHANNELS)
-        out_s = m.Wire('out_s', 32, LP_NUM_CHANNELS)
+        acc_user_request_read = m.Wire('acc_user_request_read', LP_NUM_EXAMPLES)
+        acc_user_read_data_valid = m.Wire('acc_user_read_data_valid', LP_NUM_EXAMPLES)
+        acc_user_read_data = m.Wire('acc_user_read_data', Mul(C_M_AXI_DATA_WIDTH, LP_NUM_EXAMPLES))
 
-        axi_arvalid = m.Wire('axi_arvalid', LP_NUM_CHANNELS)
-        axi_arready = m.Wire('axi_arready', LP_NUM_CHANNELS)
-        axi_araddr = m.Wire('axi_araddr', C_M_AXI_ADDR_WIDTH, LP_NUM_CHANNELS)
-        axi_arlen = m.Wire('axi_arlen', 8, LP_NUM_CHANNELS)
-        axi_rvalid = m.Wire('axi_rvalid', LP_NUM_CHANNELS)
-        axi_rready = m.Wire('axi_rready', LP_NUM_CHANNELS)
-        axi_rdata = m.Wire('axi_rdata', C_M_AXI_DATA_WIDTH, LP_NUM_CHANNELS)
-        axi_rlast = m.Wire('axi_rlast', LP_NUM_CHANNELS)
+        acc_user_available_write = m.Wire('acc_user_available_write', LP_NUM_EXAMPLES)
+        acc_user_request_write = m.Wire('acc_user_request_write', LP_NUM_EXAMPLES)
+        acc_user_write_data = m.Wire('acc_user_write_data', Mul(C_M_AXI_DATA_WIDTH, LP_NUM_EXAMPLES))
 
-        axi_awvalid = m.Wire('axi_awvalid', LP_NUM_CHANNELS)
-        axi_awready = m.Wire('axi_awready', LP_NUM_CHANNELS)
-        axi_awaddr = m.Wire('axi_awaddr', C_M_AXI_ADDR_WIDTH, LP_NUM_CHANNELS)
-        axi_awlen = m.Wire('axi_awlen', 8, LP_NUM_CHANNELS)
-        axi_wvalid = m.Wire('axi_wvalid', LP_NUM_CHANNELS)
-        axi_wready = m.Wire('axi_wready', LP_NUM_CHANNELS)
-        axi_wdata = m.Wire('axi_wdata', C_M_AXI_DATA_WIDTH, LP_NUM_CHANNELS)
-        axi_wstrb = m.Wire('axi_wstrb', Div(C_M_AXI_DATA_WIDTH, 8), LP_NUM_CHANNELS)
-        axi_wlast = m.Wire('axi_wlast', LP_NUM_CHANNELS)
-        axi_bvalid = m.Wire('axi_bvalid', LP_NUM_CHANNELS)
-        axi_bready = m.Wire('axi_bready', LP_NUM_CHANNELS)
-
-        acc_user_done_rd_data = m.Reg('acc_user_done_rd_data', LP_NUM_CHANNELS)
-        acc_user_done_wr_data = m.Reg('acc_user_done_wr_data', LP_NUM_CHANNELS)
-        acc_user_available_read = m.Wire('acc_user_available_read', LP_NUM_CHANNELS)
-        acc_user_request_read = m.Wire('acc_user_request_read', LP_NUM_CHANNELS)
-        acc_user_read_data_valid = m.Reg('acc_user_read_data_valid', LP_NUM_CHANNELS)
-        acc_user_read_data = m.Wire('acc_user_read_data', Mul(LP_NUM_CHANNELS, C_M_AXI_DATA_WIDTH))
-        acc_user_available_write = m.Wire('acc_user_available_write', LP_NUM_CHANNELS)
-        acc_user_request_write = m.Wire('acc_user_request_write', LP_NUM_CHANNELS)
-        acc_user_write_data = m.Wire('acc_user_write_data', Mul(LP_NUM_CHANNELS, C_M_AXI_DATA_WIDTH))
         acc_user_done = m.Wire('acc_user_done')
 
-        rd_ctrl_done = m.Wire('rd_ctrl_done', LP_NUM_CHANNELS)
-        wr_ctrl_done = m.Wire('wr_ctrl_done', LP_NUM_CHANNELS)
-
+        rd_tvalid = {}
+        rd_tready = {}
+        rd_tlast = {}
+        rd_tdata = {}
         for i in range(num_m_axis):
-            iin[i].assign(viin[i])
-            in_s[i].assign(vin_s[i])
-            out[i].assign(vout[i])
-            out_s[i].assign(vout_s[i])
+            n = 'rd_tvalid%d' % i
+            rd_tvalid[n] = m.Wire(n)
+            n = 'rd_tready%d' % i
+            rd_tready[n] = m.Wire(n)
+            n = 'rd_tlast%d' % i
+            rd_tlast[n] = m.Wire(n)
+            n = 'rd_tdata%d' % i
+            rd_tdata[n] = m.Wire(n, C_M_AXI_DATA_WIDTH)
 
+        wr_tvalid = {}
+        wr_tready = {}
+        wr_tdata = {}
         for i in range(num_m_axis):
-            n = '%02d' % i
-            m_axis_signals['m%s_axi_arvalid' % n].assign(axi_arvalid[i])
-            m_axis_signals['m%s_axi_araddr' % n].assign(axi_araddr[i])
-            m_axis_signals['m%s_axi_arlen' % n].assign(axi_arlen[i])
-            m_axis_signals['m%s_axi_rready' % n].assign(axi_rready[i])
-            m_axis_signals['m%s_axi_awvalid' % n].assign(axi_awvalid[i])
-            m_axis_signals['m%s_axi_awaddr' % n].assign(axi_awaddr[i])
-            m_axis_signals['m%s_axi_awlen' % n].assign(axi_awlen[i])
-            m_axis_signals['m%s_axi_wvalid' % n].assign(axi_wvalid[i])
-            m_axis_signals['m%s_axi_wdata' % n].assign(axi_wdata[i])
-            m_axis_signals['m%s_axi_wstrb' % n].assign(axi_wstrb[i])
-            m_axis_signals['m%s_axi_wlast' % n].assign(axi_wlast[i])
-            m_axis_signals['m%s_axi_bready' % n].assign(axi_bready[i])
-            axi_arready[i].assign(m_axis_signals['m%s_axi_arready' % n])
-            axi_rvalid[i].assign(m_axis_signals['m%s_axi_rvalid' % n])
-            axi_rdata[i].assign(m_axis_signals['m%s_axi_rdata' % n])
-            axi_rlast[i].assign(m_axis_signals['m%s_axi_rlast' % n])
-            axi_awready[i].assign(m_axis_signals['m%s_axi_awready' % n])
-            axi_wready[i].assign(m_axis_signals['m%s_axi_wready' % n])
-            axi_bvalid[i].assign(m_axis_signals['m%s_axi_bvalid' % n])
+            n = 'wr_tvalid%d' % i
+            wr_tvalid[n] = m.Wire(n)
+            n = 'wr_tready%d' % i
+            wr_tready[n] = m.Wire(n)
+            n = 'wr_tdata%d' % i
+            wr_tdata[n] = m.Wire(n, C_M_AXI_DATA_WIDTH)
 
         m.Always(Posedge(ap_clk))(
             areset(~ap_rst_n)
@@ -169,192 +139,140 @@ class AccAXIInterface:
             If(areset)(
                 ap_done_r(Int(0, 1, 2))
             ).Else(
-                ap_done_r(acc_user_done)
+                ap_done_r(Mux(ap_done, Int(0, 1, 2), Or(ap_done_r, acc_user_done)))
             )
-
         )
         ap_done.assign(ap_done_r)
         ap_ready.assign(ap_done)
 
-        acc_user_available_write.assign(~wr_fifo_tfull)
-        acc_user_available_read.assign(~rd_fifo_tempty)
-
+        ii = m.Integer('i')
         m.Always(Posedge(ap_clk))(
             If(areset)(
-                acc_user_read_data_valid(Int(0, num_m_axis, 10))
+                acc_user_done_rd_data(Repeat(Int(0, 1, 2), LP_NUM_EXAMPLES)),
+                acc_user_done_wr_data(Repeat(Int(0, 1, 2), LP_NUM_EXAMPLES)),
             ).Else(
-                acc_user_read_data_valid(acc_user_request_read)
+                For(ii(0), ii < LP_NUM_EXAMPLES, ii.inc())(
+                    acc_user_done_rd_data[ii](Mux(rd_ctrl_done[ii], Int(1, 1, 2), acc_user_done_rd_data[ii])),
+                    acc_user_done_wr_data[ii](Mux(wr_ctrl_done[ii], Int(1, 1, 2), acc_user_done_wr_data[ii])),
+                )
             )
         )
 
-        i = m.Genvar('i')
-        m.GenerateFor(i(0), i < LP_NUM_CHANNELS, i.inc()).Always(Posedge(ap_clk))(
-            If(areset)(
-                acc_user_done_rd_data[i](Repeat(Int(0, 1, 2), LP_NUM_CHANNELS)),
-                acc_user_done_wr_data[i](Repeat(Int(0, 1, 2), LP_NUM_CHANNELS))
-            ).Else(
-                acc_user_done_rd_data[i](Mux(rd_ctrl_done[i], Int(1, 1, 2), acc_user_done_rd_data[i])),
-                acc_user_done_wr_data[i](Mux(wr_ctrl_done[i], Int(1, 1, 2), acc_user_done_wr_data[i]))
-            )
-        )
+        rd_data_code = "{" + "".join(['rd_tdata%d,' % i for i in reversed(range(num_m_axis))])[:-1] + "}"
+        rd_valid_code = "{" + "".join(['rd_tvalid%d,' % i for i in reversed(range(num_m_axis))])[:-1] + "}"
+        wr_tready_code = "{" + "".join(['wr_tready%d,' % i for i in reversed(range(num_m_axis))])[:-1] + "}"
+
+        for i in range(num_m_axis):
+            rd_tready['rd_tready%d' % i].assign(acc_user_request_read[i])
+
+        acc_user_read_data_valid.assign(EmbeddedCode(rd_valid_code)),
+        acc_user_read_data.assign(EmbeddedCode(rd_data_code))
+
+        m.EmbeddedCode('')
+
+        acc_user_available_write.assign(EmbeddedCode(wr_tready_code))
+        for i in range(num_m_axis):
+            wr_tvalid['wr_tvalid%d' % i].assign(acc_user_request_write[i])
+            wr_tdata['wr_tdata%d' % i].assign(
+                acc_user_write_data[Mul(i, C_M_AXI_DATA_WIDTH):Mul((i + 1), C_M_AXI_DATA_WIDTH)])
+
+        axi_reader = self.create_axi_reader_wrapper()
+        axi_writer = self.create_axi_writer_wrapper()
+        for i in range(num_m_axis):
+            n = '%02d' % i
+            param = [('C_M_AXI_ADDR_WIDTH', C_M_AXI_ADDR_WIDTH),
+                     ('C_M_AXI_DATA_WIDTH', C_M_AXI_DATA_WIDTH),
+                     ('C_XFER_SIZE_WIDTH', 32),
+                     ('C_MAX_OUTSTANDING', LP_RD_MAX_OUTSTANDING),
+                     ('C_INCLUDE_DATA_FIFO', 1)
+                     ]
+            con = [('aclk', ap_clk),
+                   ('areset', areset),
+                   ('ctrl_start', ap_start_pulse),
+                   ('ctrl_done', rd_ctrl_done[i]),
+                   ('ctrl_addr_offset', viin[i]),
+                   ('ctrl_xfer_size_in_bytes', vin_s[i]),
+                   ('m_axi_arvalid', m_axis_signals['m%s_axi_arvalid' % n]),
+                   ('m_axi_arready', m_axis_signals['m%s_axi_arready' % n]),
+                   ('m_axi_araddr', m_axis_signals['m%s_axi_araddr' % n]),
+                   ('m_axi_arlen', m_axis_signals['m%s_axi_arlen' % n]),
+                   ('m_axi_rvalid', m_axis_signals['m%s_axi_rvalid' % n]),
+                   ('m_axi_rready', m_axis_signals['m%s_axi_rready' % n]),
+                   ('m_axi_rdata', m_axis_signals['m%s_axi_rdata' % n]),
+                   ('m_axi_rlast', m_axis_signals['m%s_axi_rlast' % n]),
+                   ('m_axis_aclk', ap_clk),
+                   ('m_axis_areset', areset),
+                   ('m_axis_tvalid', rd_tvalid['rd_tvalid%d' % i]),
+                   ('m_axis_tready', rd_tready['rd_tready%d' % i]),
+                   ('m_axis_tlast', rd_tlast['rd_tlast%d' % i]),
+                   ('m_axis_tdata', rd_tdata['rd_tdata%d' % i])
+                   ]
+            m.Instance(axi_reader, 'axi_reader_%d' % i, param, con)
+
+        for i in range(num_m_axis):
+            n = '%02d' % i
+            param = [('C_M_AXI_ADDR_WIDTH', C_M_AXI_ADDR_WIDTH),
+                     ('C_M_AXI_DATA_WIDTH', C_M_AXI_DATA_WIDTH),
+                     ('C_XFER_SIZE_WIDTH', 32),
+                     ('C_MAX_OUTSTANDING', LP_WR_MAX_OUTSTANDING),
+                     ('C_INCLUDE_DATA_FIFO', 1)]
+            con = [
+                ('aclk', ap_clk),
+                ('areset', areset),
+                ('ctrl_start', ap_start_pulse),
+                ('ctrl_done', wr_ctrl_done[i]),
+                ('ctrl_addr_offset', vout[i]),
+                ('ctrl_xfer_size_in_bytes', vout_s[i]),
+                ('m_axi_awvalid', m_axis_signals['m%s_axi_awvalid' % n]),
+                ('m_axi_awready', m_axis_signals['m%s_axi_awready' % n]),
+                ('m_axi_awaddr', m_axis_signals['m%s_axi_awaddr' % n]),
+                ('m_axi_awlen', m_axis_signals['m%s_axi_awlen' % n]),
+                ('m_axi_wvalid', m_axis_signals['m%s_axi_wvalid' % n]),
+                ('m_axi_wready', m_axis_signals['m%s_axi_wready' % n]),
+                ('m_axi_wdata', m_axis_signals['m%s_axi_wdata' % n]),
+                ('m_axi_wstrb', m_axis_signals['m%s_axi_wstrb' % n]),
+                ('m_axi_wlast', m_axis_signals['m%s_axi_wlast' % n]),
+                ('m_axi_bvalid', m_axis_signals['m%s_axi_bvalid' % n]),
+                ('m_axi_bready', m_axis_signals['m%s_axi_bready' % n]),
+                ('s_axis_aclk', ap_clk),
+                ('s_axis_areset', areset),
+                ('s_axis_tvalid', wr_tvalid['wr_tvalid%d' % i]),
+                ('s_axis_tready', wr_tready['wr_tready%d' % i]),
+                ('s_axis_tdata', wr_tdata['wr_tdata%d' % i])
+            ]
+            m.Instance(axi_writer, 'axi_writer_%d' % i, param, con)
 
         param = [('INTERFACE_DATA_WIDTH', C_M_AXI_DATA_WIDTH)]
-        con = [('clk', ap_clk), ('rst', areset), ('start', ap_start),
-               ('acc_user_done_rd_data', acc_user_done_rd_data),
-               ('acc_user_done_wr_data', acc_user_done_wr_data),
-               ('acc_user_available_read', acc_user_available_read),
-               ('acc_user_request_read', acc_user_request_read),
-               ('acc_user_read_data_valid', acc_user_read_data_valid),
-               ('acc_user_read_data', acc_user_read_data),
-               ('acc_user_available_write', acc_user_available_write),
-               ('acc_user_request_write', acc_user_request_write),
-               ('acc_user_write_data', acc_user_write_data),
-               ('acc_user_done', acc_user_done)
-               ]
-        m.Instance(self.acc.get(), 'app', param, con)
-
-        axi_read_master = self.create_axi_reader()
-        axi_write_master = self.create_axi_writer()
-        fifo = self.create_xpm_fifo_sync_wrapper()
-
-        genfor = m.GenerateFor(i(0), i < LP_NUM_CHANNELS, i.inc())
-        params = [('C_ADDR_WIDTH', C_M_AXI_ADDR_WIDTH), ('C_DATA_WIDTH', C_M_AXI_DATA_WIDTH),
-                  ('C_LENGTH_WIDTH', LP_LENGTH_WIDTH), ('C_BURST_LEN', LP_AXI_BURST_LEN),
-                  ('C_LOG_BURST_LEN', LP_LOG_BURST_LEN), ('C_MAX_OUTSTANDING', LP_RD_MAX_OUTSTANDING)]
-        con = [('aclk', ap_clk),
-               ('areset', areset),
-               ('ctrl_start', ap_start_pulse),
-               ('ctrl_done', rd_ctrl_done[i]),
-               ('ctrl_offset', iin[i]),
-               ('ctrl_length', in_s[i]),
-               ('ctrl_prog_full', ctrl_rd_fifo_prog_full[i]),
-               ('arvalid', axi_arvalid[i]),
-               ('arready', axi_arready[i]),
-               ('araddr', axi_araddr[i]),
-               ('arlen', axi_arlen[i]),
-               ('rvalid', axi_rvalid[i]),
-               ('rready', axi_rready[i]),
-               ('rdata', axi_rdata[i]),
-               ('rlast', axi_rlast[i]),
-               ('m_tvalid', rd_tvalid[i]),
-               ('m_tready', ~rd_tready_n[i]),
-               ('m_tdata', rd_tdata[i])]
-        genfor.Instance(axi_read_master, 'inst_axi_read_master', params, con)
-
-        params = [('C_ADDR_WIDTH', C_M_AXI_ADDR_WIDTH), ('C_DATA_WIDTH', C_M_AXI_DATA_WIDTH),
-                  ('C_MAX_LENGTH_WIDTH', LP_LENGTH_WIDTH), ('C_BURST_LEN', LP_AXI_BURST_LEN),
-                  ('C_LOG_BURST_LEN', LP_LOG_BURST_LEN)]
-        con = [('aclk', ap_clk),
-               ('areset', areset),
-               ('ctrl_start', ap_start_pulse),
-               ('ctrl_offset', out[i]),
-               ('ctrl_length', out_s[i]),
-               ('ctrl_done', wr_ctrl_done[i]),
-               ('awvalid', axi_awvalid[i]),
-               ('awready', axi_awready[i]),
-               ('awaddr', axi_awaddr[i]),
-               ('awlen', axi_awlen[i]),
-               ('s_tvalid', ~wr_fifo_tvalid_n[i]),
-               ('s_tready', wr_fifo_tready[i]),
-               ('s_tdata', wr_fifo_tdata[i]),
-               ('wvalid', axi_wvalid[i]),
-               ('wready', axi_wready[i]),
-               ('wdata', axi_wdata[i]),
-               ('wstrb', axi_wstrb[i]),
-               ('wlast', axi_wlast[i]),
-               ('bvalid', axi_bvalid[i]),
-               ('bready', axi_bready[i])]
-        genfor.Instance(axi_write_master, 'inst_axi_write_master', params, con)
-
-        params = [
-            ('FIFO_MEMORY_TYPE', "auto"),
-            ('ECC_MODE', "no_ecc"),
-            ('FIFO_WRITE_DEPTH', LP_RD_FIFO_DEPTH),
-            ('WRITE_DATA_WIDTH', C_M_AXI_DATA_WIDTH),
-            ('WR_DATA_COUNT_WIDTH', EmbeddedCode('$clog2(LP_RD_FIFO_DEPTH) + 1')),
-            ('PROG_FULL_THRESH', LP_AXI_BURST_LEN - 2),
-            ('FULL_RESET_VALUE', 1),
-            ('READ_MODE', "std"),
-            ('FIFO_READ_LATENCY', 1),
-            ('READ_DATA_WIDTH', C_M_AXI_DATA_WIDTH),
-            ('RD_DATA_COUNT_WIDTH', EmbeddedCode('$clog2(LP_RD_FIFO_DEPTH) + 1')),
-            ('PROG_EMPTY_THRESH', 10),
-            ('DOUT_RESET_VALUE', "0"),
-            ('WAKEUP_TIME', 0)
-        ]
         con = [
-            ('sleep', Int(0, 1, 2)),
+            ('clk', ap_clk),
             ('rst', areset),
-            ('wr_clk', ap_clk),
-            ('wr_en', rd_tvalid[i]),
-            ('din', rd_tdata[i]),
-            ('full', rd_tready_n[i]),
-            ('prog_full', ctrl_rd_fifo_prog_full[i]),
-            ('wr_data_count', EmbeddedCode('')),
-            ('overflow', EmbeddedCode('')),
-            ('wr_rst_busy', EmbeddedCode('')),
-            ('rd_en', acc_user_request_read[i]),
-            ('dout', acc_user_read_data[i * C_M_AXI_DATA_WIDTH:((i + 1) * C_M_AXI_DATA_WIDTH)]),
-            ('empty', rd_fifo_tempty[i]),
-            ('prog_empty', EmbeddedCode('')),
-            ('rd_data_count', EmbeddedCode('')),
-            ('underflow', EmbeddedCode('')),
-            ('rd_rst_busy', EmbeddedCode('')),
-            ('injectsbiterr', Int(0, 1, 2)),
-            ('injectdbiterr', Int(0, 1, 2)),
-            ('sbiterr', EmbeddedCode('')),
-            ('dbiterr', EmbeddedCode(''))
+            ('start', ap_start_pulse),
+            ('acc_user_done_rd_data', acc_user_done_rd_data),
+            ('acc_user_done_wr_data', acc_user_done_wr_data),
+            ('acc_user_request_read', acc_user_request_read),
+            ('acc_user_read_data_valid', acc_user_read_data_valid),
+            ('acc_user_read_data', acc_user_read_data),
+            ('acc_user_available_write', acc_user_available_write),
+            ('acc_user_request_write', acc_user_request_write),
+            ('acc_user_write_data', acc_user_write_data),
+            ('acc_user_done', acc_user_done)
         ]
-        genfor.Instance(fifo, 'inst_rd_fifo', params, con)
 
-        params = [
-            ('FIFO_MEMORY_TYPE', "auto"),
-            ('ECC_MODE', "no_ecc"),
-            ('FIFO_WRITE_DEPTH', LP_WR_FIFO_DEPTH),
-            ('WRITE_DATA_WIDTH', C_M_AXI_DATA_WIDTH),
-            ('WR_DATA_COUNT_WIDTH', EmbeddedCode('$clog2(LP_WR_FIFO_DEPTH) + 1')),
-            ('PROG_FULL_THRESH', 10),
-            ('FULL_RESET_VALUE', 1),
-            ('READ_MODE', "fwft"),
-            ('FIFO_READ_LATENCY', 1),
-            ('READ_DATA_WIDTH', C_M_AXI_DATA_WIDTH),
-            ('RD_DATA_COUNT_WIDTH', EmbeddedCode('$clog2(LP_WR_FIFO_DEPTH) + 1')),
-            ('PROG_EMPTY_THRESH', 10),
-            ('DOUT_RESET_VALUE', "0"),
-            ('WAKEUP_TIME', 0)
-        ]
-        con = [
-            ('sleep', Int(0, 1, 2)),
-            ('rst', areset),
-            ('wr_clk', ap_clk),
-            ('wr_en', acc_user_request_write[i]),
-            ('din', acc_user_write_data[i * C_M_AXI_DATA_WIDTH:((i + 1) * C_M_AXI_DATA_WIDTH)]),
-            ('full', wr_fifo_tfull[i]),
-            ('prog_full', EmbeddedCode('')),
-            ('wr_data_count', EmbeddedCode('')),
-            ('overflow', EmbeddedCode('')),
-            ('wr_rst_busy', EmbeddedCode('')),
-            ('rd_en', wr_fifo_tready[i]),
-            ('dout', wr_fifo_tdata[i]),
-            ('empty', wr_fifo_tvalid_n[i]),
-            ('prog_empty', EmbeddedCode('')),
-            ('rd_data_count', EmbeddedCode('')),
-            ('underflow', EmbeddedCode('')),
-            ('rd_rst_busy', EmbeddedCode('')),
-            ('injectsbiterr', Int(0, 1, 2)),
-            ('injectdbiterr', Int(0, 1, 2)),
-            ('sbiterr', EmbeddedCode('')),
-            ('dbiterr', EmbeddedCode(''))
-        ]
-        genfor.Instance(fifo, 'inst_wr_fifo', params, con)
+        m.Instance(self.acc.get(), 'cgra_acc', param, con)
 
-        initialize_regs(m,{'ap_idle_r':Int(1,1,2)})
+        initialize_regs(m, {'ap_idle_r': Int(1, 1, 2), 'areset': Int(1, 1, 2)})
+        self.cache[name] = m
 
         return m
 
     def create_kernel_top(self):
         num_m_axis = self.acc.get_num_in()
-        m = Module('kernel_top')
+
+        name = 'kernel_top'
+        if name in self.cache.keys():
+            return self.cache[name]
+
+        m = Module(name)
         C_S_AXI_CONTROL_ADDR_WIDTH = m.Parameter('C_S_AXI_CONTROL_ADDR_WIDTH', 12)
         C_S_AXI_CONTROL_DATA_WIDTH = m.Parameter('C_S_AXI_CONTROL_DATA_WIDTH', 32)
         C_M_AXI_ADDR_WIDTH = m.Parameter('C_M_AXI_ADDR_WIDTH', 64)
@@ -461,6 +379,10 @@ class AccAXIInterface:
         con += [(sname, s) for sname, s in m_axis_signals.items()]
 
         m.Instance(app, 'app_inst', params, con)
+
+        initialize_regs(m, {'areset': Int(1, 1, 2)})
+        self.cache[name] = m
+
         return m
 
     def create_axi_counter(self):
@@ -812,7 +734,7 @@ class AccAXIInterface:
         param = [('C_WIDTH', LP_LOG_MAX_W_TO_AW), ('C_INIT', Repeat(Int(0, 1, 2), LP_LOG_MAX_W_TO_AW))]
         con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', Int(0, 1, 2)),
                ('incr', wfirst_pulse),
-               ('decr', awxfer), ('load_value',EmbeddedCode('')),
+               ('decr', awxfer), ('load_value', EmbeddedCode('')),
                ('count', dbg_w_to_aw_outstanding),
                ('is_zero', idle_aw)]
         m.Instance(counter, 'inst_w_to_aw_cntr', param, con)
@@ -836,6 +758,156 @@ class AccAXIInterface:
         initialize_regs(m, {'wfirst': Int(1, 1, 2)})
         self.cache[name] = m
 
+        return m
+
+    def create_axi_reader_wrapper(self):
+        name = 'axi_reader_wrapper'
+        if name in self.cache.keys():
+            return self.cache[name]
+
+        m = Module(name)
+        C_M_AXI_ADDR_WIDTH = m.Parameter('C_M_AXI_ADDR_WIDTH', 64)
+        C_M_AXI_DATA_WIDTH = m.Parameter('C_M_AXI_DATA_WIDTH', 512)
+        C_XFER_SIZE_WIDTH = m.Parameter('C_XFER_SIZE_WIDTH', C_M_AXI_ADDR_WIDTH)
+        C_MAX_OUTSTANDING = m.Parameter('C_MAX_OUTSTANDING', 16)
+        C_INCLUDE_DATA_FIFO = m.Parameter('C_INCLUDE_DATA_FIFO', 1)
+
+        aclk = m.Input('aclk')
+        areset = m.Input('areset')
+
+        ctrl_start = m.Input('ctrl_start')
+        ctrl_done = m.Output('ctrl_done')
+
+        ctrl_addr_offset = m.Input('ctrl_addr_offset', C_M_AXI_ADDR_WIDTH)
+        ctrl_xfer_size_in_bytes = m.Input('ctrl_xfer_size_in_bytes', C_XFER_SIZE_WIDTH)
+
+        m_axi_arvalid = m.Output('m_axi_arvalid')
+        m_axi_arready = m.Input('m_axi_arready')
+        m_axi_araddr = m.Output('m_axi_araddr', C_M_AXI_ADDR_WIDTH)
+        m_axi_arlen = m.Output('m_axi_arlen', 8)
+
+        m_axi_rvalid = m.Input('m_axi_rvalid')
+        m_axi_rready = m.Output('m_axi_rready')
+        m_axi_rdata = m.Input('m_axi_rdata', C_M_AXI_DATA_WIDTH)
+        m_axi_rlast = m.Input('m_axi_rlast')
+
+        m_axis_aclk = m.Input('m_axis_aclk')
+        m_axis_areset = m.Input('m_axis_areset')
+        m_axis_tvalid = m.Output('m_axis_tvalid')
+        m_axis_tready = m.Input('m_axis_tready')
+        m_axis_tdata = m.Output('m_axis_tdata', C_M_AXI_DATA_WIDTH)
+        m_axis_tlast = m.Output('m_axis_tlast')
+
+        code = 'axi_reader #(\n\
+          .C_M_AXI_ADDR_WIDTH  ( C_M_AXI_ADDR_WIDTH  ) ,\n\
+          .C_M_AXI_DATA_WIDTH  ( C_M_AXI_DATA_WIDTH  ) ,\n\
+          .C_XFER_SIZE_WIDTH   ( C_XFER_SIZE_WIDTH   ) ,\n\
+          .C_MAX_OUTSTANDING   ( C_MAX_OUTSTANDING   ) ,\n\
+          .C_INCLUDE_DATA_FIFO ( C_INCLUDE_DATA_FIFO )\n\
+        )\n\
+        inst_axi_reader (\n\
+          .aclk                    ( aclk                   ) ,\n\
+          .areset                  ( areset                 ) ,\n\
+          .ctrl_start              ( ctrl_start             ) ,\n\
+          .ctrl_done               ( ctrl_done              ) ,\n\
+          .ctrl_addr_offset        ( ctrl_addr_offset       ) ,\n\
+          .ctrl_xfer_size_in_bytes ( ctrl_xfer_size_in_bytes) ,\n\
+          .m_axi_arvalid           ( m_axi_arvalid          ) ,\n\
+          .m_axi_arready           ( m_axi_arready          ) ,\n\
+          .m_axi_araddr            ( m_axi_araddr           ) ,\n\
+          .m_axi_arlen             ( m_axi_arlen            ) ,\n\
+          .m_axi_rvalid            ( m_axi_rvalid           ) ,\n\
+          .m_axi_rready            ( m_axi_rready           ) ,\n\
+          .m_axi_rdata             ( m_axi_rdata            ) ,\n\
+          .m_axi_rlast             ( m_axi_rlast            ) ,\n\
+          .m_axis_aclk             ( m_axis_aclk            ) ,\n\
+          .m_axis_areset           ( m_axis_areset          ) ,\n\
+          .m_axis_tvalid           ( m_axis_tvalid          ) ,\n\
+          .m_axis_tready           ( m_axis_tready          ) ,\n\
+          .m_axis_tlast            ( m_axis_tlast           ) ,\n\
+          .m_axis_tdata            ( m_axis_tdata           )\n\
+        );'
+        m.EmbeddedCode(code)
+
+        self.cache[name] = m
+        return m
+
+    def create_axi_writer_wrapper(self):
+        name = 'axi_writer_wrapper'
+        if name in self.cache.keys():
+            return self.cache[name]
+
+        m = Module(name)
+        C_M_AXI_ADDR_WIDTH = m.Parameter('C_M_AXI_ADDR_WIDTH', 64)
+        C_M_AXI_DATA_WIDTH = m.Parameter('C_M_AXI_DATA_WIDTH', 512)
+        C_XFER_SIZE_WIDTH = m.Parameter('C_XFER_SIZE_WIDTH', C_M_AXI_ADDR_WIDTH)
+        C_MAX_OUTSTANDING = m.Parameter('C_MAX_OUTSTANDING', 32)
+        C_INCLUDE_DATA_FIFO = m.Parameter('C_INCLUDE_DATA_FIFO', 1)
+
+        aclk = m.Input('aclk')
+        areset = m.Input('areset')
+
+        ctrl_start = m.Input('ctrl_start')
+        ctrl_done = m.Output('ctrl_done')
+
+        ctrl_addr_offset = m.Input('ctrl_addr_offset', C_M_AXI_ADDR_WIDTH)
+        ctrl_xfer_size_in_bytes = m.Input('ctrl_xfer_size_in_bytes', C_XFER_SIZE_WIDTH)
+
+        m_axi_awvalid = m.Output('m_axi_awvalid')
+        m_axi_awready = m.Input('m_axi_awready')
+        m_axi_awaddr = m.Output('m_axi_awaddr', C_M_AXI_ADDR_WIDTH)
+        m_axi_awlen = m.Output('m_axi_awlen', 8)
+
+        m_axi_wvalid = m.Output('m_axi_wvalid')
+        m_axi_wready = m.Input('m_axi_wready')
+        m_axi_wdata = m.Output('m_axi_wdata', C_M_AXI_DATA_WIDTH)
+        m_axi_wstrb = m.Output('m_axi_wstrb', Div(C_M_AXI_DATA_WIDTH, 8))
+        m_axi_wlast = m.Output('m_axi_wlast')
+
+        m_axi_bvalid = m.Input('m_axi_bvalid')
+        m_axi_bready = m.Output('m_axi_bready')
+
+        s_axis_aclk = m.Input('s_axis_aclk')
+        s_axis_areset = m.Input('s_axis_areset')
+        s_axis_tvalid = m.Input('s_axis_tvalid')
+        s_axis_tready = m.Output('s_axis_tready')
+        s_axis_tdata = m.Input('s_axis_tdata', C_M_AXI_DATA_WIDTH)
+
+        code = 'axi_writer #(\n\
+          .C_M_AXI_ADDR_WIDTH  ( C_M_AXI_ADDR_WIDTH ) ,\n\
+          .C_M_AXI_DATA_WIDTH  ( C_M_AXI_DATA_WIDTH ) ,\n\
+          .C_XFER_SIZE_WIDTH   ( C_XFER_SIZE_WIDTH  ) ,\n\
+          .C_MAX_OUTSTANDING   ( C_MAX_OUTSTANDING  ) ,\n\
+          .C_INCLUDE_DATA_FIFO ( C_INCLUDE_DATA_FIFO)\n\
+        )\n\
+        inst_axi_writer (\n\
+          .aclk                    ( aclk                   ) ,\n\
+          .areset                  ( areset                 ) ,\n\
+          .ctrl_start              ( ctrl_start             ) ,\n\
+          .ctrl_done               ( ctrl_done              ) ,\n\
+          .ctrl_addr_offset        ( ctrl_addr_offset       ) ,\n\
+          .ctrl_xfer_size_in_bytes ( ctrl_xfer_size_in_bytes) ,\n\
+          .m_axi_awvalid           ( m_axi_awvalid) ,\n\
+          .m_axi_awready           ( m_axi_awready) ,\n\
+          .m_axi_awaddr            ( m_axi_awaddr ) ,\n\
+          .m_axi_awlen             ( m_axi_awlen  ) ,\n\
+          .m_axi_wvalid            ( m_axi_wvalid ) ,\n\
+          .m_axi_wready            ( m_axi_wready ) ,\n\
+          .m_axi_wdata             ( m_axi_wdata  ) ,\n\
+          .m_axi_wstrb             ( m_axi_wstrb  ) ,\n\
+          .m_axi_wlast             ( m_axi_wlast  ) ,\n\
+          .m_axi_bvalid            ( m_axi_bvalid ) ,\n\
+          .m_axi_bready            ( m_axi_bready ) ,\n\
+          .s_axis_aclk             ( s_axis_aclk  ) ,\n\
+          .s_axis_areset           ( s_axis_areset) ,\n\
+          .s_axis_tvalid           (s_axis_tvalid ) ,\n\
+          .s_axis_tready           (s_axis_tready ) ,\n\
+          .s_axis_tdata            (s_axis_tdata  )\n\
+        );'
+
+        m.EmbeddedCode(code)
+
+        self.cache[name] = m
         return m
 
     def create_control_s_axi(self, num_m_axis):
@@ -1127,7 +1199,7 @@ class AccAXIInterface:
 
         m.Always(Posedge(aclk))(
             If(areset)(
-                int_ap_idle(Int(0, 1, 2))
+                int_ap_idle(Int(1, 1, 2))
             ).Elif(aclk_en)(
                 int_ap_idle(ap_idle)
             )
@@ -1251,7 +1323,7 @@ class AccAXIInterface:
                 )
             )
 
-        initialize_regs(m, {'wstate': WRRESET, 'rstate': RDRESET})
+        initialize_regs(m, {'wstate': WRRESET, 'rstate': RDRESET,'int_ap_idle':Int(1,1,2)})
         self.cache[name] = m
         return m
 

@@ -33,13 +33,15 @@ class CgraAccelerator:
         start = m.Input('start')
         acc_user_done_rd_data = m.Input('acc_user_done_rd_data', self.num_in)
         acc_user_done_wr_data = m.Input('acc_user_done_wr_data', self.num_out)
-        acc_user_available_read = m.Input('acc_user_available_read', self.num_in)
+
         acc_user_request_read = m.Output('acc_user_request_read', self.num_in)
         acc_user_read_data_valid = m.Input('acc_user_read_data_valid', self.num_in)
         acc_user_read_data = m.Input('acc_user_read_data', INTERFACE_DATA_WIDTH * self.num_in)
+
         acc_user_available_write = m.Input('acc_user_available_write', self.num_out)
         acc_user_request_write = m.Output('acc_user_request_write', self.num_out)
         acc_user_write_data = m.Output('acc_user_write_data', INTERFACE_DATA_WIDTH * self.num_out)
+
         acc_user_done = m.Output('acc_user_done')
 
         request_read = m.Wire('request_read', self.num_in)
@@ -68,7 +70,7 @@ class CgraAccelerator:
 
         params = [('INPUT_DATA_WIDTH', INTERFACE_DATA_WIDTH), ('OUTPUT_DATA_WIDTH', self.cgra.data_width)]
         con = [
-            ('clk', clk), ('rst', rst), ('start', conf_done), ('available_read', acc_user_available_read[genv]),
+            ('clk', clk), ('rst', rst), ('start', conf_done),
             ('request_read', request_read[genv]), ('data_valid', acc_user_read_data_valid[genv]),
             ('read_data', acc_user_read_data[Mul(genv, INTERFACE_DATA_WIDTH):Mul(genv + 1, INTERFACE_DATA_WIDTH)]),
             ('pop_data', en_pop[genv]),
@@ -90,7 +92,7 @@ class CgraAccelerator:
 
         params = []
         con = [
-            ('clk', clk), ('rst', rst), ('start', start), ('available_read', acc_user_available_read[0]),
+            ('clk', clk), ('rst', rst), ('start', start),
             ('req_rd_data', conf_control_req_rd_data), ('rd_data', acc_user_read_data[0:INTERFACE_DATA_WIDTH]),
             ('rd_data_valid', acc_user_read_data_valid[0]), ('conf_out_bus', conf_out_bus),
             ('read_fifo_mask', read_fifo_mask),

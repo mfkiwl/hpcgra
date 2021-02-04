@@ -367,7 +367,6 @@ class Components:
         rst = m.Input('rst')
         start = m.Input('start')
 
-        available_read = m.Input('available_read')
         req_rd_data = m.Output('req_rd_data')
         rd_data = m.Input('rd_data', CONF_DATA_IN_WIDTH)
         rd_data_valid = m.Input('rd_data_valid')
@@ -386,10 +385,9 @@ class Components:
         FSM_INIT_CTRL_INIT2 = m.Localparam('FSM_INIT_CTRL_INIT2', 2)
         FSM_INIT_CTRL_INIT3 = m.Localparam('FSM_INIT_CTRL_INIT3', 3)
         FSM_SEND_INIT_CONF_PE = m.Localparam('FSM_SEND_INIT_CONF_PE', 4)
-        FSM_INIT_CTRL_WAIT_DATA = m.Localparam('FSM_INIT_CTRL_WAIT_DATA', 5)
-        FSM_INIT_CTRL_REQ_DATA = m.Localparam('FSM_INIT_CTRL_REQ_DATA', 6)
+        FSM_INIT_CTRL_REQ_DATA = m.Localparam('FSM_INIT_CTRL_REQ_DATA', 5)
+        FSM_WAIT_ALL_CONF_FINISH = m.Localparam('FSM_WAIT_ALL_CONF_FINISH', 6)
         FSM_INIT_CONF_DONE = m.Localparam('FSM_INIT_CONF_DONE', 7)
-        FSM_WAIT_ALL_CONF_FINISH = m.Localparam('FSM_WAIT_ALL_CONF_FINISH', 8)
 
         m.EmbeddedCode('')
         fsm_conf_ctrl = m.Reg('fsm_conf_ctrl', 4)
@@ -464,14 +462,9 @@ class Components:
                         )
                     ),
                     When(FSM_INIT_CTRL_REQ_DATA)(
-                        If(available_read)(
-                            conf_req_data(1),
-                            fsm_conf_ctrl(FSM_INIT_CTRL_WAIT_DATA)
-                        )
-                    ),
-                    When(FSM_INIT_CTRL_WAIT_DATA)(
                         If(rd_data_valid)(
                             conf_cl(rd_data),
+                            conf_req_data(1),
                             fsm_conf_ctrl(fsm_conf_ctrl_next),
                         )
                     ),
@@ -678,7 +671,6 @@ class Components:
         start = m.Input('start')
         rst = m.Input('rst')
 
-        available_read = m.Input('available_read')
         request_read = m.OutputReg('request_read')
         data_valid = m.Input('data_valid')
         read_data = m.Input('read_data', INPUT_DATA_WIDTH)
@@ -718,19 +710,14 @@ class Components:
                 request_read(0),
                 Case(fsm_read)(
                     When(0)(
-                        If(available_read & en)(
+                        If(en & data_valid)(
+                            buffer(read_data),
                             request_read(1),
+                            has_buffer(1),
                             fsm_read(1)
                         )
                     ),
                     When(1)(
-                        If(data_valid)(
-                            buffer(read_data),
-                            has_buffer(1),
-                            fsm_read(2)
-                        )
-                    ),
-                    When(2)(
                         If(buffer_read)(
                             has_buffer(0),
                             fsm_read(0)
@@ -799,6 +786,7 @@ class Components:
         available_write = m.Input('available_write')
         request_write = m.OutputReg('request_write')
         write_data = m.OutputReg('write_data', OUTPUT_DATA_WIDTH)
+
         push_data = m.Input('push_data')
         available_push = m.OutputReg('available_push')
         data_in = m.Input('data_in', INPUT_DATA_WIDTH)
@@ -1053,4 +1041,3 @@ class Components:
         initialize_regs(m)
         self.cache[name] = m
         return m
-
