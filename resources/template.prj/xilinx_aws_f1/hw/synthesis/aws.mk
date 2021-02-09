@@ -5,10 +5,10 @@ BUCKET_NAME=my-bucket-fpga
 FOLDER=$(shell cat ./prj_name)
 LOGS=logs
 
-.PHONY: awsxclbin
-awsxclbin: $(BUILD_DIR)/kernel_top.awsxclbin
+.PHONY: aws
+aws: $(BUILD_DIR)/kernel_top.awsxclbin
 
-$(BUILD_DIR)/kernel_top.awsxclbin:
+$(BUILD_DIR)/kernel_top.awsxclbin: $(BUILD_DIR)/kernel_top.xclbin
 	touch FILES_GO_HERE.txt
 	aws s3 mb s3://$(BUCKET_NAME)/$(FOLDER)
 	aws s3 cp FILES_GO_HERE.txt s3://$(BUCKET_NAME)/$(FOLDER)/

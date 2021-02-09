@@ -40,7 +40,7 @@ include config.mk
 include aws.mk
 
 .PHONY: build
-build: check-vitis $(BINARY_CONTAINERS) awsxclbin
+build: check-vitis $(BINARY_CONTAINERS)
 
 $(BUILD_DIR)/kernel_top.xclbin: $(BINARY_CONTAINER_kernel_rtl_OBJS)
 	mkdir -p $(BUILD_DIR)

@@ -46,7 +46,7 @@ class AccAXIInterface:
             m_axis_signals['m%s_axi_rlast' % n] = m.Input('m%s_axi_rlast' % n)
 
         ap_start = m.Input('ap_start')
-        ap_idle = m.Input('ap_idle')
+        ap_idle = m.Output('ap_idle')
         ap_done = m.Output('ap_done')
         ap_ready = m.Output('ap_ready')
 
@@ -71,10 +71,9 @@ class AccAXIInterface:
 
         m.EmbeddedCode('(* KEEP = "yes" *)')
 
-        areset = m.Reg('areset')
-        ap_start_r = m.Reg('ap_start_r')
+        reset = m.Reg('reset')
+        # ap_start_r = m.Reg('ap_start_r')
         ap_idle_r = m.Reg('ap_idle_r')
-        ap_start_pulse = m.Wire('ap_start_pulse')
         ap_done_r = m.Reg('ap_done_r')
 
         rd_ctrl_done = m.Wire('rd_ctrl_done', LP_NUM_EXAMPLES)
@@ -118,13 +117,49 @@ class AccAXIInterface:
             n = 'wr_tdata%d' % i
             wr_tdata[n] = m.Wire(n, C_M_AXI_DATA_WIDTH)
 
+        fsm_reset = m.Reg('fsm_reset', 2)
+        areset = m.Reg('areset')
+        ap_start_pulse = m.Reg('ap_start_pulse')
+        FSM_STATE_START = m.Localparam('FSM_STATE_START', Int(0, 2, 2))
+        FSM_STATE_RESET = m.Localparam('FSM_STATE_RESET', Int(1, 2, 2))
+        FSM_STATE_RUNNING = m.Localparam('FSM_STATE_RUNNING', Int(2, 2, 2))
+
         m.Always(Posedge(ap_clk))(
-            areset(~ap_rst_n)
+            reset(~ap_rst_n)
         )
+
         m.Always(Posedge(ap_clk))(
-            ap_start_r(ap_start)
+            If(reset)(
+                areset(Int(0, 1, 2)),
+                fsm_reset(FSM_STATE_START),
+                ap_start_pulse(Int(0, 1, 2))
+            ).Else(
+                areset(Int(0, 1, 2)),
+                ap_start_pulse(Int(0, 1, 2)),
+                Case(fsm_reset)(
+                    When(FSM_STATE_START)(
+                        If(ap_start)(
+                            areset(Int(1, 1, 2)),
+                            fsm_reset(FSM_STATE_RESET)
+                        )
+                    ),
+                    When(FSM_STATE_RESET)(
+                        ap_start_pulse(Int(1, 1, 2)),
+                        fsm_reset(FSM_STATE_RUNNING)
+                    ),
+                    When(FSM_STATE_RUNNING)(
+                        If(~ap_start)(
+                            fsm_reset(FSM_STATE_START)
+                        )
+                    )
+                )
+            )
         )
-        ap_start_pulse.assign(ap_start & ~ap_start_r)
+
+        # m.Always(Posedge(ap_clk))(
+        #     ap_start_r(ap_start)
+        # )
+        # ap_start_pulse.assign(ap_start & ~ap_start_r)
 
         m.Always(Posedge(ap_clk))(
             If(areset)(
@@ -260,7 +295,8 @@ class AccAXIInterface:
 
         m.Instance(self.acc.get(), 'cgra_acc', param, con)
 
-        initialize_regs(m, {'ap_idle_r': Int(1, 1, 2), 'areset': Int(1, 1, 2)})
+        initialize_regs(m, {'ap_idle_r': Int(1, 1, 2), 'areset': Int(1, 1, 2), 'reset': Int(1, 1, 2),
+                            'fsm_reset': FSM_STATE_START})
         self.cache[name] = m
 
         return m
@@ -381,381 +417,6 @@ class AccAXIInterface:
         m.Instance(app, 'app_inst', params, con)
 
         initialize_regs(m, {'areset': Int(1, 1, 2)})
-        self.cache[name] = m
-
-        return m
-
-    def create_axi_counter(self):
-        name = 'axi_counter'
-        if name in self.cache.keys():
-            return self.cache[name]
-
-        m = Module(name)
-        C_WIDTH = m.Parameter('C_WIDTH', 4)
-        C_INIT = m.Parameter('C_INIT', Repeat(Int(0, 1, 2), C_WIDTH), C_WIDTH)
-        clk = m.Input('clk')
-        clken = m.Input('clken')
-        rst = m.Input('rst')
-        load = m.Input('load')
-        incr = m.Input('incr')
-        decr = m.Input('decr')
-        load_value = m.Input('load_value', C_WIDTH)
-        count = m.Output('count', C_WIDTH)
-        is_zero = m.Output('is_zero')
-
-        LP_ZERO = m.Localparam('LP_ZERO', Repeat(Int(0, 1, 2), C_WIDTH))
-        LP_ONE = m.Localparam('LP_ONE', Cat(Repeat(Int(0, 1, 2), C_WIDTH - 1), Int(1, 1, 2)))
-        LP_MAX = m.Localparam('LP_MAX', Repeat(Int(1, 1, 2), C_WIDTH))
-
-        count_r = m.Reg('count_r', C_WIDTH)
-        is_zero_r = m.Reg('is_zero_r')
-
-        count.assign(count_r)
-        m.Always(Posedge(clk))(
-            If(rst)(
-                count_r(C_INIT)
-            ).Elif(clken)(
-                If(load)(
-                    count_r(load_value)
-                ).Elif(incr & ~decr)(
-                    count_r.inc()
-                ).Elif(decr & ~incr)(
-                    count_r.dec()
-                ).Else(
-                    count_r(count_r)
-                )
-            )
-        )
-        is_zero.assign(is_zero_r)
-        m.Always(Posedge(clk))(
-            If(rst)(
-                is_zero_r(C_INIT == LP_ZERO)
-            ).Elif(clken)(
-                If(load)(
-                    is_zero_r(load_value == LP_ZERO)
-                ).Else(
-                    is_zero_r(Mux(Xor(incr, decr), Lor(Land(decr, count_r == LP_ONE), Land(incr, count_r == LP_MAX)),
-                                  is_zero_r))
-                )
-            ).Else(
-                is_zero_r(is_zero_r)
-            )
-        )
-        initialize_regs(m, {'count_r': C_INIT, 'is_zero_r': EmbeddedCode('C_INIT == LP_ZERO')})
-        self.cache[name] = m
-        return m
-
-    def create_axi_reader(self):
-        name = 'axi_reader'
-        if name in self.cache.keys():
-            return self.cache[name]
-
-        m = Module(name)
-        C_ADDR_WIDTH = m.Parameter('C_ADDR_WIDTH', 64)
-        C_DATA_WIDTH = m.Parameter('C_DATA_WIDTH', 32)
-        C_LENGTH_WIDTH = m.Parameter('C_LENGTH_WIDTH', 32)
-        C_BURST_LEN = m.Parameter('C_BURST_LEN', 256)
-        C_LOG_BURST_LEN = m.Parameter('C_LOG_BURST_LEN', EmbeddedCode('$clog2(C_BURST_LEN)'))
-        C_MAX_OUTSTANDING = m.Parameter('C_MAX_OUTSTANDING', 3)
-
-        aclk = m.Input('aclk')
-        areset = m.Input('areset')
-        ctrl_start = m.Input('ctrl_start')
-        ctrl_done = m.Output('ctrl_done')
-        ctrl_offset = m.Input('ctrl_offset', C_ADDR_WIDTH)
-        ctrl_length = m.Input('ctrl_length', C_LENGTH_WIDTH)
-        ctrl_prog_full = m.Input('ctrl_prog_full')
-
-        arvalid = m.Output('arvalid')
-        arready = m.Input('arready')
-        araddr = m.Output('araddr', C_ADDR_WIDTH)
-        arlen = m.Output('arlen', 8)
-        rvalid = m.Input('rvalid')
-        rready = m.Output('rready')
-        rdata = m.Input('rdata', C_DATA_WIDTH)
-        rlast = m.Input('rlast')
-        rresp = m.Input('rresp', 2)
-        m_tvalid = m.Output('m_tvalid')
-        m_tready = m.Input('m_tready')
-        m_tdata = m.Output('m_tdata', C_DATA_WIDTH)
-
-        LP_MAX_OUTSTANDING_CNTR_WIDTH = m.Localparam('LP_MAX_OUTSTANDING_CNTR_WIDTH',
-                                                     EmbeddedCode('$clog2(C_MAX_OUTSTANDING+1)'))
-        LP_TRANSACTION_CNTR_WIDTH = m.Localparam('LP_TRANSACTION_CNTR_WIDTH', C_LENGTH_WIDTH - C_LOG_BURST_LEN)
-
-        done = m.Reg('done')
-        num_full_bursts = m.Wire('num_full_bursts', LP_TRANSACTION_CNTR_WIDTH)
-        num_partial_bursts = m.Wire('num_partial_bursts')
-        start = m.Reg('start')
-        num_transactions = m.Reg('num_transactions', LP_TRANSACTION_CNTR_WIDTH)
-        has_partial_burst = m.Reg('has_partial_burst')
-        final_burst_len = m.Reg('final_burst_len', C_LOG_BURST_LEN)
-        single_transaction = m.Wire('single_transaction')
-        ar_idle = m.Reg('ar_idle')
-        ar_done = m.Wire('ar_done')
-
-        fifo_stall = m.Wire('fifo_stall')
-        arxfer = m.Wire('arxfer')
-        arvalid_r = m.Reg('arvalid_r')
-        addr = m.Reg('addr', C_ADDR_WIDTH)
-        ar_transactions_to_go = m.Wire('ar_transactions_to_go', LP_TRANSACTION_CNTR_WIDTH)
-        ar_final_transaction = m.Wire('ar_final_transaction')
-        incr_ar_to_r_cnt = m.Wire('incr_ar_to_r_cnt')
-        decr_ar_to_r_cnt = m.Wire('decr_ar_to_r_cnt')
-        stall_ar = m.Wire('stall_ar')
-        outstanding_vacancy_count = m.Wire('outstanding_vacancy_count', LP_MAX_OUTSTANDING_CNTR_WIDTH)
-
-        tvalid = m.Wire('tvalid')
-        tdata = m.Wire('tdata', C_DATA_WIDTH)
-        rxfer = m.Wire('rxfer')
-        decr_r_transaction_cntr = m.Wire('decr_r_transaction_cntr')
-        r_transactions_to_go = m.Wire('r_transactions_to_go', LP_TRANSACTION_CNTR_WIDTH)
-        r_final_transaction = m.Wire('r_final_transaction')
-
-        m.Always(Posedge(aclk))(
-            done(Mux(rxfer & rlast & r_final_transaction, Int(1, 1, 2), Mux(ctrl_done, Int(0, 1, 2), done)))
-        )
-        ctrl_done.assign(done)
-
-        num_full_bursts.assign(ctrl_length[C_LOG_BURST_LEN:C_LENGTH_WIDTH - C_LOG_BURST_LEN])
-        num_partial_bursts.assign(Mux(ctrl_length[0:C_LOG_BURST_LEN], Int(1, 1, 2), Int(0, 1, 2)))
-
-        m.Always(Posedge(aclk))(
-            start(ctrl_start),
-            num_transactions(Mux(num_partial_bursts == Int(0, 1, 2), num_full_bursts - Int(1, 1, 2), num_full_bursts)),
-            has_partial_burst(num_partial_bursts),
-            final_burst_len(ctrl_length[0:C_LOG_BURST_LEN] - Int(1, 1, 2))
-        )
-        single_transaction.assign(
-            Mux(num_transactions == Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH), Int(1, 1, 2), Int(0, 1, 2)))
-
-        arvalid.assign(arvalid_r)
-        araddr.assign(addr)
-        arlen.assign(Mux(Lor(ar_final_transaction, start & single_transaction), final_burst_len, C_BURST_LEN - 1))
-        arxfer.assign(arvalid & arready)
-        fifo_stall.assign(ctrl_prog_full)
-
-        m.Always(Posedge(aclk))(
-            If(areset)(
-                arvalid_r(Int(0, 1, 2))
-            ).Else(
-                arvalid_r(Mux(~ar_idle & ~stall_ar & ~arvalid_r & ~fifo_stall, Int(1, 1, 2),
-                              Mux(arready, Int(0, 1, 2), arvalid_r)))
-            )
-        )
-
-        m.Always(Posedge(aclk))(
-            If(areset)(
-                ar_idle(Int(1, 1, 2))
-            ).Else(
-                ar_idle(Mux(start, Int(0, 1, 2), Mux(ar_done, Int(1, 1, 2), ar_idle)))
-            )
-        )
-
-        m.Always(Posedge(aclk))(
-            addr(Mux(ctrl_start, ctrl_offset, Mux(arxfer, addr + C_BURST_LEN * C_DATA_WIDTH / 8, addr)))
-        )
-
-        ar_done.assign(Land(ar_final_transaction, arxfer))
-        incr_ar_to_r_cnt.assign(rxfer & rlast)
-        decr_ar_to_r_cnt.assign(arxfer)
-
-        m_tvalid.assign(tvalid)
-        m_tdata.assign(tdata)
-        tvalid.assign(rvalid)
-        tdata.assign(rdata)
-
-        rready.assign(Int(1, 1, 2))
-        rxfer.assign(rready & rvalid)
-        decr_r_transaction_cntr.assign(rxfer & rlast)
-
-        counter = self.create_axi_counter()
-        param = [('C_WIDTH', LP_TRANSACTION_CNTR_WIDTH), ('C_INIT', Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH))]
-        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', start), ('incr', Int(0, 1, 2)),
-               ('decr', arxfer), ('load_value', num_transactions), ('count', ar_transactions_to_go),
-               ('is_zero', ar_final_transaction)]
-        m.Instance(counter, 'inst_ar_transaction_cntr', param, con)
-        param = [('C_WIDTH', LP_MAX_OUTSTANDING_CNTR_WIDTH),
-                 ('C_INIT', C_MAX_OUTSTANDING[0:LP_MAX_OUTSTANDING_CNTR_WIDTH])]
-        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', Int(0, 1, 2)),
-               ('incr', incr_ar_to_r_cnt),
-               ('decr', decr_ar_to_r_cnt), ('load_value', Repeat(Int(0, 1, 2), LP_MAX_OUTSTANDING_CNTR_WIDTH)),
-               ('count', outstanding_vacancy_count),
-               ('is_zero', stall_ar)]
-        m.Instance(counter, 'inst_ar_to_r_transaction_cntr', param, con)
-        param = [('C_WIDTH', LP_TRANSACTION_CNTR_WIDTH), ('C_INIT', Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH))]
-        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', start), ('incr', Int(0, 1, 2)),
-               ('decr', decr_r_transaction_cntr), ('load_value', num_transactions), ('count', r_transactions_to_go),
-               ('is_zero', r_final_transaction)]
-        m.Instance(counter, 'inst_r_transaction_cntr', param, con)
-
-        initialize_regs(m, {'ar_idle': Int(1, 1, 2)})
-        self.cache[name] = m
-
-        return m
-
-    def create_axi_writer(self):
-        name = 'axi_writer'
-        if name in self.cache.keys():
-            return self.cache[name]
-
-        m = Module(name)
-        C_ADDR_WIDTH = m.Parameter('C_ADDR_WIDTH', 64)
-        C_DATA_WIDTH = m.Parameter('C_DATA_WIDTH', 32)
-        C_MAX_LENGTH_WIDTH = m.Parameter('C_MAX_LENGTH_WIDTH', 32)
-        C_BURST_LEN = m.Parameter('C_BURST_LEN', 256)
-        C_LOG_BURST_LEN = m.Parameter('C_LOG_BURST_LEN', 8)
-
-        aclk = m.Input('aclk')
-        areset = m.Input('areset')
-        ctrl_start = m.Input('ctrl_start')
-        ctrl_offset = m.Input('ctrl_offset', C_ADDR_WIDTH)
-        ctrl_length = m.Input('ctrl_length', C_MAX_LENGTH_WIDTH)
-        ctrl_done = m.Output('ctrl_done')
-        s_tvalid = m.Input('s_tvalid')
-        s_tdata = m.Input('s_tdata', C_DATA_WIDTH)
-        s_tready = m.Output('s_tready')
-        awaddr = m.Output('awaddr', C_ADDR_WIDTH)
-        awlen = m.Output('awlen', 8)
-        awvalid = m.Output('awvalid')
-        awready = m.Input('awready')
-        wdata = m.Output('wdata', C_DATA_WIDTH)
-        wstrb = m.Output('wstrb', Div(C_DATA_WIDTH, 8))
-        wlast = m.Output('wlast')
-        wvalid = m.Output('wvalid')
-        wready = m.Input('wready')
-        bvalid = m.Input('bvalid')
-        bready = m.Output('bready')
-
-        LP_LOG_MAX_W_TO_AW = m.Localparam('LP_LOG_MAX_W_TO_AW', 8)
-        LP_TRANSACTION_CNTR_WIDTH = m.Localparam('LP_TRANSACTION_CNTR_WIDTH', C_MAX_LENGTH_WIDTH - C_LOG_BURST_LEN)
-
-        num_full_bursts = m.Wire('num_full_bursts', LP_TRANSACTION_CNTR_WIDTH)
-        num_partial_bursts = m.Wire('num_partial_bursts')
-        start = m.Reg('start')
-        num_transactions = m.Reg('num_transactions', LP_TRANSACTION_CNTR_WIDTH)
-        has_partial_burst = m.Reg('has_partial_burst')
-        final_burst_len = m.Reg('final_burst_len', C_LOG_BURST_LEN)
-        single_transaction = m.Wire('single_transaction')
-
-        wxfer = m.Wire('wxfer')
-        wfirst = m.Reg('wfirst')
-        load_burst_cntr = m.Wire('load_burst_cntr')
-        wxfers_to_go = m.Wire('wxfers_to_go', C_LOG_BURST_LEN)
-        w_transactions_to_go = m.Wire('w_transactions_to_go', LP_TRANSACTION_CNTR_WIDTH)
-        w_final_transaction = m.Wire('w_final_transaction')
-        w_almost_final_transaction = m.Reg('w_almost_final_transaction')
-        awxfer = m.Wire('awxfer')
-        awvalid_r = m.Reg('awvalid_r')
-        addr = m.Reg('addr', C_ADDR_WIDTH)
-        wfirst_d1 = m.Reg('wfirst_d1')
-        wfirst_pulse = m.Reg('wfirst_pulse')
-        dbg_w_to_aw_outstanding = m.Wire('dbg_w_to_aw_outstanding', LP_LOG_MAX_W_TO_AW)
-        idle_aw = m.Wire('idle_aw')
-        aw_transactions_to_go = m.Wire('aw_transactions_to_go', LP_TRANSACTION_CNTR_WIDTH)
-        aw_final_transaction = m.Wire('aw_final_transaction')
-        bxfer = m.Wire('bxfer')
-        b_transactions_to_go = m.Wire('b_transactions_to_go', LP_TRANSACTION_CNTR_WIDTH)
-        b_final_transaction = m.Wire('b_final_transaction')
-
-        num_full_bursts.assign(ctrl_length[C_LOG_BURST_LEN:C_MAX_LENGTH_WIDTH - C_LOG_BURST_LEN])
-        num_partial_bursts.assign(Mux(ctrl_length[0:C_LOG_BURST_LEN], Int(1, 1, 2), Int(0, 1, 2)))
-
-        m.Always(Posedge(aclk))(
-            start(ctrl_start),
-            num_transactions(Mux(num_partial_bursts == Int(0, 1, 2), num_full_bursts - Int(1, 1, 2), num_full_bursts)),
-            has_partial_burst(num_partial_bursts),
-            final_burst_len(ctrl_length[0:C_LOG_BURST_LEN] - Int(1, 1, 2))
-        )
-
-        ctrl_done.assign(bxfer & b_final_transaction)
-        single_transaction.assign(
-            Mux(num_transactions == Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH), Int(1, 1, 2), Int(0, 1, 2)))
-
-        wvalid.assign(s_tvalid)
-        wdata.assign(s_tdata)
-        wstrb.assign(Repeat(Int(1, 1, 2), Div(C_DATA_WIDTH, 8)))
-        s_tready.assign(wready)
-        wxfer.assign(wvalid & wready)
-        m.Always(Posedge(aclk))(
-            If(areset)(
-                wfirst(Int(1, 1, 2))
-            ).Else(
-                wfirst(Mux(wxfer, wlast, wfirst))
-            )
-        )
-
-        load_burst_cntr.assign(Lor(And(And(wxfer, wlast), w_almost_final_transaction), And(start, single_transaction)))
-
-        m.Always(Posedge(aclk))(
-            w_almost_final_transaction(Mux(w_transactions_to_go == 1, Int(1, 1, 2), Int(0, 1, 2)))
-        )
-
-        awvalid.assign(awvalid_r)
-        awxfer.assign(awvalid & awready)
-
-        m.Always(Posedge(aclk))(
-            If(areset)(
-                awvalid_r(Int(0, 1, 2))
-            ).Else(
-                awvalid_r(Mux(~idle_aw & ~awvalid_r, Int(1, 1, 2), Mux(awready, Int(0, 1, 2), awvalid_r)))
-            )
-        )
-        awaddr.assign(addr)
-        m.Always(Posedge(aclk))(
-            addr(Mux(ctrl_start, ctrl_offset, Mux(awxfer, addr + C_BURST_LEN * C_DATA_WIDTH / 8, addr)))
-        )
-        awlen.assign(Mux(Lor(aw_final_transaction, And(start, single_transaction)), final_burst_len, C_BURST_LEN - 1))
-
-        m.Always(Posedge(aclk))(
-            wfirst_d1(wvalid & wfirst)
-        )
-        m.Always(Posedge(aclk))(
-            wfirst_pulse(wvalid & wfirst & ~wfirst_d1)
-        )
-        bready.assign(Int(1, 1, 2))
-        bxfer.assign(bready & bvalid)
-
-        counter = self.create_axi_counter()
-        param = [('C_WIDTH', C_LOG_BURST_LEN), ('C_INIT', Repeat(Int(1, 1, 2), C_LOG_BURST_LEN))]
-        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', load_burst_cntr),
-               ('incr', Int(0, 1, 2)),
-               ('decr', wxfer), ('load_value', final_burst_len), ('count', wxfers_to_go),
-               ('is_zero', wlast)]
-        m.Instance(counter, 'inst_burst_cntr', param, con)
-
-        param = [('C_WIDTH', LP_TRANSACTION_CNTR_WIDTH), ('C_INIT', Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH))]
-        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', start),
-               ('incr', Int(0, 1, 2)),
-               ('decr', wxfer & wlast), ('load_value', num_transactions), ('count', w_transactions_to_go),
-               ('is_zero', w_final_transaction)]
-        m.Instance(counter, 'inst_w_transaction_cntr', param, con)
-
-        param = [('C_WIDTH', LP_LOG_MAX_W_TO_AW), ('C_INIT', Repeat(Int(0, 1, 2), LP_LOG_MAX_W_TO_AW))]
-        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', Int(0, 1, 2)),
-               ('incr', wfirst_pulse),
-               ('decr', awxfer), ('load_value', EmbeddedCode('')),
-               ('count', dbg_w_to_aw_outstanding),
-               ('is_zero', idle_aw)]
-        m.Instance(counter, 'inst_w_to_aw_cntr', param, con)
-
-        param = [('C_WIDTH', LP_TRANSACTION_CNTR_WIDTH), ('C_INIT', Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH))]
-        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', start),
-               ('incr', Int(0, 1, 2)),
-               ('decr', awxfer), ('load_value', num_transactions),
-               ('count', aw_transactions_to_go),
-               ('is_zero', aw_final_transaction)]
-        m.Instance(counter, 'inst_aw_transaction_cntr', param, con)
-
-        param = [('C_WIDTH', LP_TRANSACTION_CNTR_WIDTH), ('C_INIT', Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH))]
-        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', start),
-               ('incr', Int(0, 1, 2)),
-               ('decr', bxfer), ('load_value', num_transactions),
-               ('count', b_transactions_to_go),
-               ('is_zero', b_final_transaction)]
-        m.Instance(counter, 'inst_b_transaction_cntr', param, con)
-
-        initialize_regs(m, {'wfirst': Int(1, 1, 2)})
         self.cache[name] = m
 
         return m
@@ -1323,7 +984,7 @@ class AccAXIInterface:
                 )
             )
 
-        initialize_regs(m, {'wstate': WRRESET, 'rstate': RDRESET,'int_ap_idle':Int(1,1,2)})
+        initialize_regs(m, {'wstate': WRRESET, 'rstate': RDRESET, 'int_ap_idle': Int(1, 1, 2)})
         self.cache[name] = m
         return m
 
@@ -1411,3 +1072,380 @@ class AccAXIInterface:
         m.EmbeddedCode(code)
         self.cache[name] = m
         return m
+
+    '''
+    def create_axi_counter(self):
+        name = 'axi_counter'
+        if name in self.cache.keys():
+            return self.cache[name]
+
+        m = Module(name)
+        C_WIDTH = m.Parameter('C_WIDTH', 4)
+        C_INIT = m.Parameter('C_INIT', Repeat(Int(0, 1, 2), C_WIDTH), C_WIDTH)
+        clk = m.Input('clk')
+        clken = m.Input('clken')
+        rst = m.Input('rst')
+        load = m.Input('load')
+        incr = m.Input('incr')
+        decr = m.Input('decr')
+        load_value = m.Input('load_value', C_WIDTH)
+        count = m.Output('count', C_WIDTH)
+        is_zero = m.Output('is_zero')
+
+        LP_ZERO = m.Localparam('LP_ZERO', Repeat(Int(0, 1, 2), C_WIDTH))
+        LP_ONE = m.Localparam('LP_ONE', Cat(Repeat(Int(0, 1, 2), C_WIDTH - 1), Int(1, 1, 2)))
+        LP_MAX = m.Localparam('LP_MAX', Repeat(Int(1, 1, 2), C_WIDTH))
+
+        count_r = m.Reg('count_r', C_WIDTH)
+        is_zero_r = m.Reg('is_zero_r')
+
+        count.assign(count_r)
+        m.Always(Posedge(clk))(
+            If(rst)(
+                count_r(C_INIT)
+            ).Elif(clken)(
+                If(load)(
+                    count_r(load_value)
+                ).Elif(incr & ~decr)(
+                    count_r.inc()
+                ).Elif(decr & ~incr)(
+                    count_r.dec()
+                ).Else(
+                    count_r(count_r)
+                )
+            )
+        )
+        is_zero.assign(is_zero_r)
+        m.Always(Posedge(clk))(
+            If(rst)(
+                is_zero_r(C_INIT == LP_ZERO)
+            ).Elif(clken)(
+                If(load)(
+                    is_zero_r(load_value == LP_ZERO)
+                ).Else(
+                    is_zero_r(Mux(Xor(incr, decr), Lor(Land(decr, count_r == LP_ONE), Land(incr, count_r == LP_MAX)),
+                                  is_zero_r))
+                )
+            ).Else(
+                is_zero_r(is_zero_r)
+            )
+        )
+        initialize_regs(m, {'count_r': C_INIT, 'is_zero_r': EmbeddedCode('C_INIT == LP_ZERO')})
+        self.cache[name] = m
+        return m
+
+    def create_axi_reader(self):
+        name = 'axi_reader'
+        if name in self.cache.keys():
+            return self.cache[name]
+
+        m = Module(name)
+        C_ADDR_WIDTH = m.Parameter('C_ADDR_WIDTH', 64)
+        C_DATA_WIDTH = m.Parameter('C_DATA_WIDTH', 32)
+        C_LENGTH_WIDTH = m.Parameter('C_LENGTH_WIDTH', 32)
+        C_BURST_LEN = m.Parameter('C_BURST_LEN', 256)
+        C_LOG_BURST_LEN = m.Parameter('C_LOG_BURST_LEN', EmbeddedCode('$clog2(C_BURST_LEN)'))
+        C_MAX_OUTSTANDING = m.Parameter('C_MAX_OUTSTANDING', 3)
+
+        aclk = m.Input('aclk')
+        areset = m.Input('areset')
+        ctrl_start = m.Input('ctrl_start')
+        ctrl_done = m.Output('ctrl_done')
+        ctrl_offset = m.Input('ctrl_offset', C_ADDR_WIDTH)
+        ctrl_length = m.Input('ctrl_length', C_LENGTH_WIDTH)
+        ctrl_prog_full = m.Input('ctrl_prog_full')
+
+        arvalid = m.Output('arvalid')
+        arready = m.Input('arready')
+        araddr = m.Output('araddr', C_ADDR_WIDTH)
+        arlen = m.Output('arlen', 8)
+        rvalid = m.Input('rvalid')
+        rready = m.Output('rready')
+        rdata = m.Input('rdata', C_DATA_WIDTH)
+        rlast = m.Input('rlast')
+        rresp = m.Input('rresp', 2)
+        m_tvalid = m.Output('m_tvalid')
+        m_tready = m.Input('m_tready')
+        m_tdata = m.Output('m_tdata', C_DATA_WIDTH)
+
+        LP_MAX_OUTSTANDING_CNTR_WIDTH = m.Localparam('LP_MAX_OUTSTANDING_CNTR_WIDTH',
+                                                     EmbeddedCode('$clog2(C_MAX_OUTSTANDING+1)'))
+        LP_TRANSACTION_CNTR_WIDTH = m.Localparam('LP_TRANSACTION_CNTR_WIDTH', C_LENGTH_WIDTH - C_LOG_BURST_LEN)
+
+        done = m.Reg('done')
+        num_full_bursts = m.Wire('num_full_bursts', LP_TRANSACTION_CNTR_WIDTH)
+        num_partial_bursts = m.Wire('num_partial_bursts')
+        start = m.Reg('start')
+        num_transactions = m.Reg('num_transactions', LP_TRANSACTION_CNTR_WIDTH)
+        has_partial_burst = m.Reg('has_partial_burst')
+        final_burst_len = m.Reg('final_burst_len', C_LOG_BURST_LEN)
+        single_transaction = m.Wire('single_transaction')
+        ar_idle = m.Reg('ar_idle')
+        ar_done = m.Wire('ar_done')
+
+        fifo_stall = m.Wire('fifo_stall')
+        arxfer = m.Wire('arxfer')
+        arvalid_r = m.Reg('arvalid_r')
+        addr = m.Reg('addr', C_ADDR_WIDTH)
+        ar_transactions_to_go = m.Wire('ar_transactions_to_go', LP_TRANSACTION_CNTR_WIDTH)
+        ar_final_transaction = m.Wire('ar_final_transaction')
+        incr_ar_to_r_cnt = m.Wire('incr_ar_to_r_cnt')
+        decr_ar_to_r_cnt = m.Wire('decr_ar_to_r_cnt')
+        stall_ar = m.Wire('stall_ar')
+        outstanding_vacancy_count = m.Wire('outstanding_vacancy_count', LP_MAX_OUTSTANDING_CNTR_WIDTH)
+
+        tvalid = m.Wire('tvalid')
+        tdata = m.Wire('tdata', C_DATA_WIDTH)
+        rxfer = m.Wire('rxfer')
+        decr_r_transaction_cntr = m.Wire('decr_r_transaction_cntr')
+        r_transactions_to_go = m.Wire('r_transactions_to_go', LP_TRANSACTION_CNTR_WIDTH)
+        r_final_transaction = m.Wire('r_final_transaction')
+
+        m.Always(Posedge(aclk))(
+            done(Mux(rxfer & rlast & r_final_transaction, Int(1, 1, 2), Mux(ctrl_done, Int(0, 1, 2), done)))
+        )
+        ctrl_done.assign(done)
+
+        num_full_bursts.assign(ctrl_length[C_LOG_BURST_LEN:C_LENGTH_WIDTH - C_LOG_BURST_LEN])
+        num_partial_bursts.assign(Mux(ctrl_length[0:C_LOG_BURST_LEN], Int(1, 1, 2), Int(0, 1, 2)))
+
+        m.Always(Posedge(aclk))(
+            start(ctrl_start),
+            num_transactions(Mux(num_partial_bursts == Int(0, 1, 2), num_full_bursts - Int(1, 1, 2), num_full_bursts)),
+            has_partial_burst(num_partial_bursts),
+            final_burst_len(ctrl_length[0:C_LOG_BURST_LEN] - Int(1, 1, 2))
+        )
+        single_transaction.assign(
+            Mux(num_transactions == Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH), Int(1, 1, 2), Int(0, 1, 2)))
+
+        arvalid.assign(arvalid_r)
+        araddr.assign(addr)
+        arlen.assign(Mux(Lor(ar_final_transaction, start & single_transaction), final_burst_len, C_BURST_LEN - 1))
+        arxfer.assign(arvalid & arready)
+        fifo_stall.assign(ctrl_prog_full)
+
+        m.Always(Posedge(aclk))(
+            If(areset)(
+                arvalid_r(Int(0, 1, 2))
+            ).Else(
+                arvalid_r(Mux(~ar_idle & ~stall_ar & ~arvalid_r & ~fifo_stall, Int(1, 1, 2),
+                              Mux(arready, Int(0, 1, 2), arvalid_r)))
+            )
+        )
+
+        m.Always(Posedge(aclk))(
+            If(areset)(
+                ar_idle(Int(1, 1, 2))
+            ).Else(
+                ar_idle(Mux(start, Int(0, 1, 2), Mux(ar_done, Int(1, 1, 2), ar_idle)))
+            )
+        )
+
+        m.Always(Posedge(aclk))(
+            addr(Mux(ctrl_start, ctrl_offset, Mux(arxfer, addr + C_BURST_LEN * C_DATA_WIDTH / 8, addr)))
+        )
+
+        ar_done.assign(Land(ar_final_transaction, arxfer))
+        incr_ar_to_r_cnt.assign(rxfer & rlast)
+        decr_ar_to_r_cnt.assign(arxfer)
+
+        m_tvalid.assign(tvalid)
+        m_tdata.assign(tdata)
+        tvalid.assign(rvalid)
+        tdata.assign(rdata)
+
+        rready.assign(Int(1, 1, 2))
+        rxfer.assign(rready & rvalid)
+        decr_r_transaction_cntr.assign(rxfer & rlast)
+
+        counter = self.create_axi_counter()
+        param = [('C_WIDTH', LP_TRANSACTION_CNTR_WIDTH), ('C_INIT', Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH))]
+        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', start), ('incr', Int(0, 1, 2)),
+               ('decr', arxfer), ('load_value', num_transactions), ('count', ar_transactions_to_go),
+               ('is_zero', ar_final_transaction)]
+        m.Instance(counter, 'inst_ar_transaction_cntr', param, con)
+        param = [('C_WIDTH', LP_MAX_OUTSTANDING_CNTR_WIDTH),
+                 ('C_INIT', C_MAX_OUTSTANDING[0:LP_MAX_OUTSTANDING_CNTR_WIDTH])]
+        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', Int(0, 1, 2)),
+               ('incr', incr_ar_to_r_cnt),
+               ('decr', decr_ar_to_r_cnt), ('load_value', Repeat(Int(0, 1, 2), LP_MAX_OUTSTANDING_CNTR_WIDTH)),
+               ('count', outstanding_vacancy_count),
+               ('is_zero', stall_ar)]
+        m.Instance(counter, 'inst_ar_to_r_transaction_cntr', param, con)
+        param = [('C_WIDTH', LP_TRANSACTION_CNTR_WIDTH), ('C_INIT', Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH))]
+        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', start), ('incr', Int(0, 1, 2)),
+               ('decr', decr_r_transaction_cntr), ('load_value', num_transactions), ('count', r_transactions_to_go),
+               ('is_zero', r_final_transaction)]
+        m.Instance(counter, 'inst_r_transaction_cntr', param, con)
+
+        initialize_regs(m, {'ar_idle': Int(1, 1, 2)})
+        self.cache[name] = m
+
+        return m
+
+    def create_axi_writer(self):
+        name = 'axi_writer'
+        if name in self.cache.keys():
+            return self.cache[name]
+
+        m = Module(name)
+        C_ADDR_WIDTH = m.Parameter('C_ADDR_WIDTH', 64)
+        C_DATA_WIDTH = m.Parameter('C_DATA_WIDTH', 32)
+        C_MAX_LENGTH_WIDTH = m.Parameter('C_MAX_LENGTH_WIDTH', 32)
+        C_BURST_LEN = m.Parameter('C_BURST_LEN', 256)
+        C_LOG_BURST_LEN = m.Parameter('C_LOG_BURST_LEN', 8)
+
+        aclk = m.Input('aclk')
+        areset = m.Input('areset')
+        ctrl_start = m.Input('ctrl_start')
+        ctrl_offset = m.Input('ctrl_offset', C_ADDR_WIDTH)
+        ctrl_length = m.Input('ctrl_length', C_MAX_LENGTH_WIDTH)
+        ctrl_done = m.Output('ctrl_done')
+        s_tvalid = m.Input('s_tvalid')
+        s_tdata = m.Input('s_tdata', C_DATA_WIDTH)
+        s_tready = m.Output('s_tready')
+        awaddr = m.Output('awaddr', C_ADDR_WIDTH)
+        awlen = m.Output('awlen', 8)
+        awvalid = m.Output('awvalid')
+        awready = m.Input('awready')
+        wdata = m.Output('wdata', C_DATA_WIDTH)
+        wstrb = m.Output('wstrb', Div(C_DATA_WIDTH, 8))
+        wlast = m.Output('wlast')
+        wvalid = m.Output('wvalid')
+        wready = m.Input('wready')
+        bvalid = m.Input('bvalid')
+        bready = m.Output('bready')
+
+        LP_LOG_MAX_W_TO_AW = m.Localparam('LP_LOG_MAX_W_TO_AW', 8)
+        LP_TRANSACTION_CNTR_WIDTH = m.Localparam('LP_TRANSACTION_CNTR_WIDTH', C_MAX_LENGTH_WIDTH - C_LOG_BURST_LEN)
+
+        num_full_bursts = m.Wire('num_full_bursts', LP_TRANSACTION_CNTR_WIDTH)
+        num_partial_bursts = m.Wire('num_partial_bursts')
+        start = m.Reg('start')
+        num_transactions = m.Reg('num_transactions', LP_TRANSACTION_CNTR_WIDTH)
+        has_partial_burst = m.Reg('has_partial_burst')
+        final_burst_len = m.Reg('final_burst_len', C_LOG_BURST_LEN)
+        single_transaction = m.Wire('single_transaction')
+
+        wxfer = m.Wire('wxfer')
+        wfirst = m.Reg('wfirst')
+        load_burst_cntr = m.Wire('load_burst_cntr')
+        wxfers_to_go = m.Wire('wxfers_to_go', C_LOG_BURST_LEN)
+        w_transactions_to_go = m.Wire('w_transactions_to_go', LP_TRANSACTION_CNTR_WIDTH)
+        w_final_transaction = m.Wire('w_final_transaction')
+        w_almost_final_transaction = m.Reg('w_almost_final_transaction')
+        awxfer = m.Wire('awxfer')
+        awvalid_r = m.Reg('awvalid_r')
+        addr = m.Reg('addr', C_ADDR_WIDTH)
+        wfirst_d1 = m.Reg('wfirst_d1')
+        wfirst_pulse = m.Reg('wfirst_pulse')
+        dbg_w_to_aw_outstanding = m.Wire('dbg_w_to_aw_outstanding', LP_LOG_MAX_W_TO_AW)
+        idle_aw = m.Wire('idle_aw')
+        aw_transactions_to_go = m.Wire('aw_transactions_to_go', LP_TRANSACTION_CNTR_WIDTH)
+        aw_final_transaction = m.Wire('aw_final_transaction')
+        bxfer = m.Wire('bxfer')
+        b_transactions_to_go = m.Wire('b_transactions_to_go', LP_TRANSACTION_CNTR_WIDTH)
+        b_final_transaction = m.Wire('b_final_transaction')
+
+        num_full_bursts.assign(ctrl_length[C_LOG_BURST_LEN:C_MAX_LENGTH_WIDTH - C_LOG_BURST_LEN])
+        num_partial_bursts.assign(Mux(ctrl_length[0:C_LOG_BURST_LEN], Int(1, 1, 2), Int(0, 1, 2)))
+
+        m.Always(Posedge(aclk))(
+            start(ctrl_start),
+            num_transactions(Mux(num_partial_bursts == Int(0, 1, 2), num_full_bursts - Int(1, 1, 2), num_full_bursts)),
+            has_partial_burst(num_partial_bursts),
+            final_burst_len(ctrl_length[0:C_LOG_BURST_LEN] - Int(1, 1, 2))
+        )
+
+        ctrl_done.assign(bxfer & b_final_transaction)
+        single_transaction.assign(
+            Mux(num_transactions == Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH), Int(1, 1, 2), Int(0, 1, 2)))
+
+        wvalid.assign(s_tvalid)
+        wdata.assign(s_tdata)
+        wstrb.assign(Repeat(Int(1, 1, 2), Div(C_DATA_WIDTH, 8)))
+        s_tready.assign(wready)
+        wxfer.assign(wvalid & wready)
+        m.Always(Posedge(aclk))(
+            If(areset)(
+                wfirst(Int(1, 1, 2))
+            ).Else(
+                wfirst(Mux(wxfer, wlast, wfirst))
+            )
+        )
+
+        load_burst_cntr.assign(Lor(And(And(wxfer, wlast), w_almost_final_transaction), And(start, single_transaction)))
+
+        m.Always(Posedge(aclk))(
+            w_almost_final_transaction(Mux(w_transactions_to_go == 1, Int(1, 1, 2), Int(0, 1, 2)))
+        )
+
+        awvalid.assign(awvalid_r)
+        awxfer.assign(awvalid & awready)
+
+        m.Always(Posedge(aclk))(
+            If(areset)(
+                awvalid_r(Int(0, 1, 2))
+            ).Else(
+                awvalid_r(Mux(~idle_aw & ~awvalid_r, Int(1, 1, 2), Mux(awready, Int(0, 1, 2), awvalid_r)))
+            )
+        )
+        awaddr.assign(addr)
+        m.Always(Posedge(aclk))(
+            addr(Mux(ctrl_start, ctrl_offset, Mux(awxfer, addr + C_BURST_LEN * C_DATA_WIDTH / 8, addr)))
+        )
+        awlen.assign(Mux(Lor(aw_final_transaction, And(start, single_transaction)), final_burst_len, C_BURST_LEN - 1))
+
+        m.Always(Posedge(aclk))(
+            wfirst_d1(wvalid & wfirst)
+        )
+        m.Always(Posedge(aclk))(
+            wfirst_pulse(wvalid & wfirst & ~wfirst_d1)
+        )
+        bready.assign(Int(1, 1, 2))
+        bxfer.assign(bready & bvalid)
+
+        counter = self.create_axi_counter()
+        param = [('C_WIDTH', C_LOG_BURST_LEN), ('C_INIT', Repeat(Int(1, 1, 2), C_LOG_BURST_LEN))]
+        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', load_burst_cntr),
+               ('incr', Int(0, 1, 2)),
+               ('decr', wxfer), ('load_value', final_burst_len), ('count', wxfers_to_go),
+               ('is_zero', wlast)]
+        m.Instance(counter, 'inst_burst_cntr', param, con)
+
+        param = [('C_WIDTH', LP_TRANSACTION_CNTR_WIDTH), ('C_INIT', Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH))]
+        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', start),
+               ('incr', Int(0, 1, 2)),
+               ('decr', wxfer & wlast), ('load_value', num_transactions), ('count', w_transactions_to_go),
+               ('is_zero', w_final_transaction)]
+        m.Instance(counter, 'inst_w_transaction_cntr', param, con)
+
+        param = [('C_WIDTH', LP_LOG_MAX_W_TO_AW), ('C_INIT', Repeat(Int(0, 1, 2), LP_LOG_MAX_W_TO_AW))]
+        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', Int(0, 1, 2)),
+               ('incr', wfirst_pulse),
+               ('decr', awxfer), ('load_value', EmbeddedCode('')),
+               ('count', dbg_w_to_aw_outstanding),
+               ('is_zero', idle_aw)]
+        m.Instance(counter, 'inst_w_to_aw_cntr', param, con)
+
+        param = [('C_WIDTH', LP_TRANSACTION_CNTR_WIDTH), ('C_INIT', Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH))]
+        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', start),
+               ('incr', Int(0, 1, 2)),
+               ('decr', awxfer), ('load_value', num_transactions),
+               ('count', aw_transactions_to_go),
+               ('is_zero', aw_final_transaction)]
+        m.Instance(counter, 'inst_aw_transaction_cntr', param, con)
+
+        param = [('C_WIDTH', LP_TRANSACTION_CNTR_WIDTH), ('C_INIT', Repeat(Int(0, 1, 2), LP_TRANSACTION_CNTR_WIDTH))]
+        con = [('clk', aclk), ('clken', Int(1, 1, 2)), ('rst', areset), ('load', start),
+               ('incr', Int(0, 1, 2)),
+               ('decr', bxfer), ('load_value', num_transactions),
+               ('count', b_transactions_to_go),
+               ('is_zero', b_final_transaction)]
+        m.Instance(counter, 'inst_b_transaction_cntr', param, con)
+
+        initialize_regs(m, {'wfirst': Int(1, 1, 2)})
+        self.cache[name] = m
+
+        return m
+    '''
