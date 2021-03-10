@@ -10,10 +10,10 @@ from simulation.Simulator import Simulator
 
 if __name__ == "__main__":
     dot_file_path = "./vector_sum.dot"
-    type_of_input_generation = 2
-    tam_input_data = 30
-    genereted_files_path = "./"
-
+    type_of_input_generation = 1
+    tam_input_data = 10
+    generated_files_path = "./"
+    '''
     if len(sys.argv) > 1:
         dot_file_path = sys.argv[1]
         type_of_input_generation = int(sys.argv[2])
@@ -24,6 +24,6 @@ if __name__ == "__main__":
         print("Usage: dot_file_path type_of_input_generation tam_input_data"
               " genereted_files_path")
         exit(0)
-
+    '''
     simulator = Simulator(dot_file_path)
-    simulator.start(type_of_input_generation, tam_input_data, genereted_files_path)
+    simulator.start(type_of_input_generation, tam_input_data, generated_files_path)

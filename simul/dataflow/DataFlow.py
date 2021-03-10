@@ -27,17 +27,13 @@ class DataFlow:
             consumer.queue_input(data, valid, port)
         for n in self.nodes:
             self.nodes[n].execute()
-#            self.nodes[n].to_string()
-        done_counter = 0
         for o in self.output_nodes:
-            if o.done == 1:
-                done_counter = done_counter + 1
-            else:
+            if o.done == 0:
                 return
         self.done = 1
 
     def create_dataflow(self, type_of_input_generation: int,
-                        tam_input_data: int, files_path: str):
+                        tam_input_data: int, generated_files_path: str):
         nodes = self.di.get_nodes()
         edges = self.di.get_edges()
         opcodes = self.di.get_opcodes()
@@ -47,9 +43,9 @@ class DataFlow:
         for n in nodes:
             node = ""
             if opcodes[n] == 'input':
-                node = InputNode(n, type_of_input_generation, tam_input_data, files_path)
+                node = InputNode(n, type_of_input_generation, tam_input_data, generated_files_path)
             elif opcodes[n] == 'output':
-                node = OutputNode(n, files_path)
+                node = OutputNode(n, generated_files_path)
                 self.output_nodes.append(node)
             elif opcodes[n] == 'add':
                 node = AddNode(n, n_input_per_node[n])

@@ -8,9 +8,8 @@ class Node:
     name = ""
     v_inputs = []
     inputs = []
-    n_inputs = 0
-    output = 0
     v_output = 0
+    output = 0
 
     # initialization: Defines the name and the number of inputs that the node
     # has.
@@ -18,10 +17,7 @@ class Node:
         self.name = name
         self.set_n_inputs(n_inputs)
         self.v_output = 0
-
-    # returns the number of inputs defined
-    def get_n_inputs(self):
-        return self.n_inputs
+        self.output = 0
 
     # sets the number of inputs for the node. It cleans the content of queues
     def set_n_inputs(self, n_inputs: int):
@@ -29,8 +25,7 @@ class Node:
             n_inputs = 1
         self.inputs = []
         self.v_inputs = []
-        self.n_inputs = n_inputs
-        for i in range(self.n_inputs):
+        for i in range(n_inputs):
             self.inputs.append(queue.Queue())
             self.v_inputs.append(queue.Queue())
 

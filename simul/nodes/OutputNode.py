@@ -12,11 +12,11 @@ class OutputNode(Node):
     file_path = ""
 
     # Constructor for the pass node
-    def __init__(self, name: str, file_path: str):
+    def __init__(self, name: str, output_file_path: str):
         self.name = name
         self.set_n_inputs(1)
         self.done = 0
-        self.file_path = file_path
+        self.file_path = output_file_path
 
     # Execute method overrited to do what we need, that is pass the input to
     # the output

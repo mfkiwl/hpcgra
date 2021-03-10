@@ -11,7 +11,7 @@ class InputNode(Node):
     data_in = queue.Queue()
 
     # Constructor for the pass node
-    def __init__(self, name: str, type_of_generation: int, tam_in: int, file_path: str):
+    def __init__(self, name: str, type_of_generation: int, tam_in: int, generated_file_path: str):
         self.name = name
         self.set_n_inputs(1)
         self.data_in = queue.Queue()
@@ -31,7 +31,7 @@ class InputNode(Node):
                 n = randint(1, 65535)
                 self.data_in.put(n)
                 content += str(n) + "\n"
-        self.save_file(file_path, content)
+        self.save_file(generated_file_path, content)
 
     def save_file(self, file_path, content):
         file = open(file_path + self.name + "_input.txt", 'w')
