@@ -1,9 +1,10 @@
 # Class for the Input node. This node creates a series of data to the be
 # process in the dataflow.
 # Jeronimo Costa Penha 2021/03/10
-from util.Queue import Queue
-from random import random, randint
+from random import randint
+
 from nodes.Node import Node
+from util.Queue import Queue
 
 
 # TODO DESCRIPTION AND COMMENTS

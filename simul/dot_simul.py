@@ -5,6 +5,7 @@
 # Start of develop in 2021/03/09 by Jeronimo Costa Penha.
 
 import sys
+
 from simulation.Simulator import Simulator
 
 # TODO DESCRIPTION AND COMMENTS
@@ -14,7 +15,7 @@ if __name__ == "__main__":
     type_of_input_generation = 1
     tam_input_data = 10
     generated_files_path = "./"
-    '''
+
     if len(sys.argv) > 1:
         dot_file_path = sys.argv[1]
         type_of_input_generation = int(sys.argv[2])
@@ -23,8 +24,8 @@ if __name__ == "__main__":
     else:
         print("Error!\n")
         print("Usage: dot_file_path type_of_input_generation tam_input_data"
-              " genereted_files_path")
+              " generated_files_path")
         exit(0)
-    '''
+
     simulator = Simulator(dot_file_path)
     simulator.start(type_of_input_generation, tam_input_data, generated_files_path)

@@ -29,7 +29,7 @@ class DataFlow:
         for n in self._nodes:
             self._nodes[n].pre_execute()
         for o in self._output_nodes:
-            if o._done == 0:
+            if o.get_done() == 0:
                 return
         self._done = 1
 
@@ -53,8 +53,5 @@ class DataFlow:
             self._nodes[n] = node
         self._edges = []
         for e in edges:
-            objs = []
-            objs.append(e[0])
-            objs.append(e[1])
-            objs.append(edges_ports[e])
+            objs = [e[0], e[1], edges_ports[e]]
             self._edges.append(objs)

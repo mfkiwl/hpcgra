@@ -37,3 +37,6 @@ class OutputNode(Node):
         for i in range(len(self._inputs)):
             self._v_inputs[i].get()
         self.execute()
+
+    def get_done(self):
+        return self._done
