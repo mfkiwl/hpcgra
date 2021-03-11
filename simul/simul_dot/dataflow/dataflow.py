@@ -1,10 +1,11 @@
-from nodes.AddNode import AddNode
-from nodes.InputNode import InputNode
-from nodes.OutputNode import OutputNode
-from dot.DotInterpreter import DotInterpreter
-
+from simul_dot.nodes.add_node import AddNode
+from simul_dot.nodes.input_node import InputNode
+from simul_dot.nodes.output_node import OutputNode
+from simul_dot.dot.dot_interpreter import DotInterpreter
 
 # TODO DESCRIPTIONS AND COMMENTS
+from util.os_util_functions import search_a_path, correct_directory_path
+
 
 class DataFlow:
 
@@ -34,7 +35,7 @@ class DataFlow:
         self._done = 1
 
     def create_dataflow(self, type_of_input_generation: int,
-                        tam_input_data: int, generated_files_path: str):
+                        tam_input_data: int, paths: str):
         nodes = self._di.get_nodes()
         edges = self._di.get_edges()
         opcodes = self._di.get_opcodes()
@@ -44,9 +45,12 @@ class DataFlow:
         for n in nodes:
             node = ""
             if opcodes[n] == 'input':
-                node = InputNode(n, type_of_input_generation, tam_input_data, generated_files_path)
+                node = InputNode(n, type_of_input_generation, tam_input_data,
+                                 correct_directory_path(
+                                     search_a_path("input_files", paths)))
             elif opcodes[n] == 'output':
-                node = OutputNode(n, generated_files_path)
+                node = OutputNode(n,  correct_directory_path(
+                    search_a_path("output_files_dot", paths)))
                 self._output_nodes.append(node)
             elif opcodes[n] == 'add':
                 node = AddNode(n, n_input_per_node[n])

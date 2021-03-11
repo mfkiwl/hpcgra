@@ -3,8 +3,9 @@
 # Jeronimo Costa Penha 2021/03/10
 from random import randint
 
-from nodes.Node import Node
-from util.Queue import Queue
+from simul_dot.nodes.node import Node
+from util.os_util_functions import correct_directory_path, save_file
+from util.queue import Queue
 
 
 # TODO DESCRIPTION AND COMMENTS
@@ -31,10 +32,13 @@ class InputNode(Node):
                 n = randint(0, 1000)
                 self._data_in.put(n)
                 content += str(n) + "\n"
-        self.save_file(generated_file_path, content)
+        file = correct_directory_path(generated_file_path) + self._name + ".txt"
+        method = "w"
+        save_file(file, content, method)
 
     def save_file(self, file_path, content):
-        file = open(file_path + self._name + "_input.txt", 'w')
+        file_path = correct_directory_path(file_path)
+        file = open(file_path + self._name + ".txt", 'w')
         file.writelines(content)
         file.close()
 

@@ -1,7 +1,7 @@
 # Class for the ADD node. This node returns the sum of the input values
 # Jeronimo Costa Penha 2021/03/09
 
-from nodes.Node import Node
+from simul_dot.nodes.node import Node
 
 
 # TODO DESCRIPTION AND COMMENTS

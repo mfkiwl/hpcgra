@@ -1,7 +1,7 @@
 # Class for a basic node, that will be inherited for other nodes
 # Jeronimo Costa Penha 2021/03/09
 
-from util.Queue import Queue
+from util.queue import Queue
 
 
 # TODO DESCRIPTION AND COMMENTS

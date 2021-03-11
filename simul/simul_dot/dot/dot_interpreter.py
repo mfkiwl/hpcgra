@@ -10,14 +10,22 @@ import networkx as nx
 class DotInterpreter:
 
     # Constructor. Just for set the dot file path
-    def __init__(self, dot_file: str):
-        self._dot_file_path = dot_file
+    def __init__(self, files: []):
+        self._files = files
+        self._dot_file = self.search_dot_file()
         self._graph = nx.DiGraph(nx.drawing.nx_pydot.read_dot(
-            self._dot_file_path))
+            self._dot_file))
+
+    def search_dot_file(self):
+        for file in self._files:
+            if ".dot" in  file:
+                return file
+        raise Exception("Error! No .dot file found.")
+
 
     def update_graph(self):
         self._graph = nx.DiGraph(nx.drawing.nx_pydot.read_dot(
-            self._dot_file_path))
+            self._dot_file))
 
     # Returns the graph dictionary with the contents of dot file
     def get_graph(self) -> nx.DiGraph:
@@ -50,7 +58,3 @@ class DotInterpreter:
             else:
                 n_input_per_node[edge[1]] = n_input_per_node[edge[1]] + 1
         return n_input_per_node
-
-    # returns the actual dot file path
-    def get_dot_file_path(self):
-        return self._dot_file_path

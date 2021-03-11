@@ -4,9 +4,9 @@
 
 # TODO DESCRIPTION AND COMMENTS
 # TODO TO_STRING
-
-from util.Queue import Queue
-from nodes.Node import Node
+from util.os_util_functions import correct_directory_path, save_file
+from util.queue import Queue
+from simul_dot.nodes.node import Node
 
 
 class OutputNode(Node):
@@ -26,12 +26,12 @@ class OutputNode(Node):
         elif self.check_not_valid():
             return
         if self.check_done():
-            file = open(self._file_path + self._name + "_output.txt", "w")
+            file = self._file_path + self._name + ".txt"
+            method = "w"
             content = ""
             while self._data_out.get_size() > 0:
                 content += str(self._data_out.get()) + "\n"
-            file.writelines(content)
-            file.close()
+            save_file(file, content, method)
             self._done = 1
             return
         for i in range(len(self._inputs)):
