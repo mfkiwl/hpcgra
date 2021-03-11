@@ -5,11 +5,12 @@
 # Start of develop in 2021/03/09 by Jeronimo Costa Penha.
 
 import sys
-
 from simulation.Simulator import Simulator
 
+# TODO DESCRIPTION AND COMMENTS
+
 if __name__ == "__main__":
-    dot_file_path = "./vector_sum.dot"
+    dot_file_path = "./vector_sum2.dot"
     type_of_input_generation = 1
     tam_input_data = 10
     generated_files_path = "./"

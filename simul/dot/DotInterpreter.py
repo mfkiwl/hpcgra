@@ -1,25 +1,27 @@
 # Class responsible for the interpretation of dot file to simulate
 # Jeronimo Costa Penha 2021/03/09
-from turtle import dot
 
 import networkx as nx
 
 
+# TODO DESCRIPTION AND COMMENTS
+# TODO TO_STRING
+
 class DotInterpreter:
-    dot_file_path = ""
-    graph = ""
 
     # Constructor. Just for set the dot file path
     def __init__(self, dot_file: str):
-        self.set_dot_file_path(dot_file)
+        self._dot_file_path = dot_file
+        self._graph = nx.DiGraph(nx.drawing.nx_pydot.read_dot(
+            self._dot_file_path))
 
     def update_graph(self):
-        self.graph = nx.DiGraph(nx.drawing.nx_pydot.read_dot(
-            self.dot_file_path))
+        self._graph = nx.DiGraph(nx.drawing.nx_pydot.read_dot(
+            self._dot_file_path))
 
     # Returns the graph dictionary with the contents of dot file
     def get_graph(self) -> nx.DiGraph:
-        return self.graph
+        return self._graph
 
     def get_opcodes(self):
         opcodes = nx.get_node_attributes(self.get_graph(), 'opcode')
@@ -49,20 +51,6 @@ class DotInterpreter:
                 n_input_per_node[edge[1]] = n_input_per_node[edge[1]] + 1
         return n_input_per_node
 
-    # Changes the path of the dot file
-    def set_dot_file_path(self, dot_file_path):
-        self.dot_file_path = dot_file_path
-        self.update_graph()
-
     # returns the actual dot file path
     def get_dot_file_path(self):
-        return self.dot_file_path
-
-
-#a = DotInterpreter("../vector_sum.dot")
-#print(a.get_graph())
-#print(a.get_nodes())
-#print(a.get_opcodes())
-#print(a.get_n_input_per_node())
-#print(a.get_edges())
-#print(a.get_edges_ports())
+        return self._dot_file_path
