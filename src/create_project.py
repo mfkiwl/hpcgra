@@ -3,10 +3,10 @@ import traceback
 
 from veriloggen import *
 
-from cgra import Cgra
-from cgra_accelerator import CgraAccelerator
-from create_acc_axi_interface import AccAXIInterface
-from utils import commands_getoutput
+from src.hw.cgra import Cgra
+from src.hw.cgra_accelerator import CgraAccelerator
+from src.hw.create_acc_axi_interface import AccAXIInterface
+from src.hw.utils import commands_getoutput
 
 
 def write_file(name, string):
