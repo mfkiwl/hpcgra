@@ -108,7 +108,7 @@ def create_testbench_sim(cgraAcc):
     module = cgraAcc.get()
 
     m.Instance(module, module.name, params, con)
-    '''f
+
     initialize_regs(m, {'clk': 0, 'rst': 1, 'wr_available': 2 ** num_out - 1})
 
     simulation.setup_waveform(m)
@@ -129,8 +129,8 @@ def create_testbench_sim(cgraAcc):
             Finish()
         )
     )
-
-    or i in range(num_in):
+    '''
+    for i in range(num_in):
         params = [('file', 'in%d.txt' % i), ('data_width', INTERFACE_DATA_WIDTH), ('addr_width', 10)]
         con = [('clk', clk), ('rst', rst), ('re', rd_request[i]), ('available', rd_available[i]),
                ('valid', rd_valid[i]), ('done', rd_done[i]),

@@ -41,6 +41,41 @@ module testbench_sim
   );
 
 
+  initial begin
+    clk = 0;
+    rst = 1;
+    start = 0;
+    wr_done = 0;
+    wr_available = 1;
+  end
+
+
+  initial begin
+    $dumpfile("uut.vcd");
+    $dumpvars(0);
+  end
+
+
+  initial begin
+    @(posedge clk);
+    @(posedge clk);
+    @(posedge clk);
+    rst = 0;
+    start = 1;
+    #10000;
+    $finish;
+  end
+
+  always #5clk=~clk;
+
+  always @(posedge clk) begin
+    if(acc_done) begin
+      $display("ACC DONE!");
+      $finish;
+    end 
+  end
+
+
 endmodule
 
 
