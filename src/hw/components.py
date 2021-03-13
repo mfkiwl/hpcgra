@@ -952,7 +952,7 @@ class Components:
         self.cache[name] = m
         return m
 
-    def create_memory_rom_control(self):
+    def create_data_producer(self):
         name = 'mem_rom_control'
         if name in self.cache.keys():
             return self.cache[name]
@@ -960,9 +960,15 @@ class Components:
         file = m.Parameter('file', 'file.txt')
         data_width = m.Parameter('data_width', 512)
         addr_width = m.Parameter('addr_width', 16)
+        num_data = m.Parameter('num_data',10)
         clk = m.Input('clk')
         rst = m.Input('rst')
         re = m.Input('re')
+        '''
+        acc_user_request_read = m.Output('acc_user_request_read', self.num_in)
+        acc_user_read_data_valid = m.Input('acc_user_read_data_valid', self.num_in)
+        acc_user_read_data = m.Input('acc_user_read_data', INTERFACE_DATA_WIDTH * self.num_in)
+        '''
 
         available = m.OutputReg('available')
         valid = m.OutputReg('valid')

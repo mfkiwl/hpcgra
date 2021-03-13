@@ -19,18 +19,12 @@ class VerilogSimulator:
         # creating the cgra accelarator top
         self._cgra_acc = CgraAccelerator(self._cgra)
         # create the HW verilog file
-        cgra_acc_verilog = self._cgra_acc.get().to_verilog()
-        #cgra_acc_testbench_verilog = create_testbench_sim(self._cgra_acc)
+        cgra_acc_testbench_verilog = \
+            create_testbench_sim(self._cgra_acc).to_verilog()
         method = "w"
         file = correct_directory_path(
-            search_a_path("verilog_simul/verilog_src", paths)) + "cgra_acc.v"
-        save_file(file, cgra_acc_verilog, method)
-        #file = correct_directory_path(
-        #    search_a_path("verilog_simul/verilog_src", paths)) + "test_bench.v"
-        #save_file(file, cgra_acc_testbench_verilog, method)
-        # create the test bench verilog files
-        #self._testbench = create_testbench_sim(self._cgra_acc)
-        a = 1
+            search_a_path("verilog_simul/verilog_src", paths)) + "test_bench.v"
+        save_file(file, cgra_acc_testbench_verilog, method)
 
     # TODO
     def start(self):

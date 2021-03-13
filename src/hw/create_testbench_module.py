@@ -70,7 +70,7 @@ def create_testbench_synth(cgraAcc):
 def create_testbench_sim(cgraAcc):
     num_in = len(cgraAcc.cgra.input_ids)
     num_out = len(cgraAcc.cgra.output_ids)
-    mem_crtl = Components().create_memory_rom_control()
+    mem_crtl = Components().create_data_producer()
 
     m = Module('testbench_sim')
 
@@ -97,7 +97,6 @@ def create_testbench_sim(cgraAcc):
     con = [('clk', clk), ('rst', rst), ('start', start),
            ('acc_user_done_rd_data', rd_done),
            ('acc_user_done_wr_data', wr_done),
-           ('acc_user_available_read', rd_available),
            ('acc_user_request_read', rd_request),
            ('acc_user_read_data_valid', rd_valid),
            ('acc_user_read_data', rd_data),
@@ -106,11 +105,10 @@ def create_testbench_sim(cgraAcc):
            ('acc_user_write_data', wr_data),
            ('acc_user_done', acc_done)
            ]
-
     module = cgraAcc.get()
 
     m.Instance(module, module.name, params, con)
-
+    '''f
     initialize_regs(m, {'clk': 0, 'rst': 1, 'wr_available': 2 ** num_out - 1})
 
     simulation.setup_waveform(m)
@@ -132,12 +130,13 @@ def create_testbench_sim(cgraAcc):
         )
     )
 
-    for i in range(num_in):
+    or i in range(num_in):
         params = [('file', 'in%d.txt' % i), ('data_width', INTERFACE_DATA_WIDTH), ('addr_width', 10)]
         con = [('clk', clk), ('rst', rst), ('re', rd_request[i]), ('available', rd_available[i]),
                ('valid', rd_valid[i]), ('done', rd_done[i]),
                ('dout', rd_data[Mul(i, INTERFACE_DATA_WIDTH):Mul(i + 1, INTERFACE_DATA_WIDTH)])]
 
         m.Instance(mem_crtl, 'mem_rom_control_%d' % i, params, con)
-
+    '''
     return m
+
