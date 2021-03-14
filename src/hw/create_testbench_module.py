@@ -123,7 +123,7 @@ def create_testbench_sim(cgraAcc, num_data):
         )
     )
 
-    '''params = [('INTERFACE_DATA_WIDTH', INTERFACE_DATA_WIDTH)]
+    params = [('INTERFACE_DATA_WIDTH', INTERFACE_DATA_WIDTH)]
     con = [('clk', clk), ('rst', rst), ('start', start),
            ('acc_user_done_rd_data', rd_done),
            ('acc_user_done_wr_data', wr_done),
@@ -138,7 +138,7 @@ def create_testbench_sim(cgraAcc, num_data):
     module = cgraAcc.get()
 
     m.Instance(module, module.name, params, con)
-    '''
+
 
     '''for i in range(num_in):
         params = [('file', 'in%d.txt' % i), ('data_width', INTERFACE_DATA_WIDTH), ('addr_width', 10)]

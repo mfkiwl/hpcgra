@@ -983,8 +983,9 @@ class Components:
 
         fsm_produce_data = m.Reg('fsm_produce_data', 2)
         fsm_init = m.Localparam('fsm_init', Int(0, fsm_produce_data.width, 10))
-        fsm_produce = m.Localparam('fsm_produce', Int(1, fsm_produce_data.width, 10))
-        fsm_done = m.Localparam('fsm_done', Int(2, fsm_produce_data.width, 10))
+        fsm_produce1 = m.Localparam('fsm_produce1', Int(1, fsm_produce_data.width, 10))
+        fsm_produce2 = m.Localparam('fsm_produce2', Int(2, fsm_produce_data.width, 10))
+        fsm_done = m.Localparam('fsm_done', Int(3, fsm_produce_data.width, 10))
 
         m.EmbeddedCode("\n")
 
@@ -1000,15 +1001,19 @@ class Components:
                 Case(fsm_produce_data)(
                     When(fsm_init)(
                         re_fsw(Int(1, 1, 10)),
-                        fsm_produce_data(fsm_produce)
+                        fsm_produce_data(fsm_produce1)
                     ),
-                    When(fsm_produce)(
-                        re_fsw(Int(0, 1, 10)),
+                    When(fsm_produce1)(
+                        data_counter(data_counter + Int(1, data_counter.width, 10)),
                         read_data_valid(Int(1, 1, 10)),
+                        re_fsw(Int(0, 1, 10)),
+                        fsm_produce_data(fsm_produce2),
+                    ),
+                    When(fsm_produce2)(
                         If(request_read)(
-                            # read_data_valid(request_read),
-                            data_counter(data_counter + Int(1, data_counter.width, 10)),
-                            # fsm_produce_data(fsm_produce),
+                            # data_counter(data_counter + Int(1, data_counter.width, 10)),
+                            # read_data_valid(Int(0, 1, 10)),
+                            fsm_produce_data(fsm_produce1),
                         ),
                         If(data_counter == Int(num_data - 1, data_counter.width, 10))(
                             fsm_produce_data(fsm_done)
