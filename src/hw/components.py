@@ -1039,6 +1039,59 @@ class Components:
 
         return m
 
+    def create_data_consumer(self, num_data: int, wait_to_write: int, loop_write: int):
+        counter_wait_width = ceil(log2(wait_to_write))
+        counter_loop_width = ceil(log2(loop_write))
+        counter_data_width = ceil(log2(num_data))
+
+        name = 'data_consumer'
+        if name in self.cache.keys():
+            return self.cache[name]
+        m = Module(name)
+        data_width = m.Parameter('data_width', 512)
+        # Control signals for the component
+        clk = m.Input('clk')
+        rst = m.Input('rst')
+
+        # comunication buses for the cgra output data
+        wr_available = m.OutputReg('wr_available')
+        wr_request = m.Input('wr_request')
+        wr_data = m.Input('wr_data', data_width)
+        acc_done = m.Input('acc_done')
+
+        counter_wait = m.Reg('counter_wait', counter_wait_width)
+        counter_loop = m.Reg('counter_loop', counter_loop_width)
+        counter_data = m.Reg('counter_data', counter_data_width)
+
+        fsm_read_data = m.Reg('fsm_read_data', 2)
+        fsm_wait = m.Localparam('fsm_wait', Int(0, fsm_read_data.width, 10))
+        fsm_read = m.Localparam('fsm_read', Int(1, fsm_read_data.width, 10))
+
+        m.Always(Posedge(clk))(
+            If(rst)(
+                counter_wait(Int(0, counter_wait.width, 10)),
+                counter_loop(Int(0, counter_loop.width, 10)),
+                counter_data(Int(0, counter_data.width, 10)),
+                fsm_read(fsm_wait),
+            ).Else(
+                Case(fsm_read)(
+                    When(fsm_wait)(
+                        If(counter_wait >= Int(wait_to_write - 1, counter_wait.width, 10))(
+                            counter_wait(counter_wait + 1, counter_wait.width, 10),
+                            fsm_read(fsm_read),
+                        )
+                    ).When(fsm_read)(
+                        If()
+                    )
+                ),
+            )
+        )
+
+        initialize_regs(m)
+        self.cache[name] = m
+
+        return m
+
     def create_acc_reset(self):
         name = 'acc_reset'
         if name in self.cache.keys():

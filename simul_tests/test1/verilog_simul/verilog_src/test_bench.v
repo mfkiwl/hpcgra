@@ -52,6 +52,27 @@ module testbench_sim
   );
 
 
+  cgra_acc
+  #(
+    .INTERFACE_DATA_WIDTH(INTERFACE_DATA_WIDTH)
+  )
+  cgra_acc
+  (
+    .clk(clk),
+    .rst(rst),
+    .start(start),
+    .acc_user_done_rd_data(rd_done),
+    .acc_user_done_wr_data(wr_done),
+    .acc_user_request_read(rd_request),
+    .acc_user_read_data_valid(rd_valid),
+    .acc_user_read_data(rd_data),
+    .acc_user_available_write(wr_available),
+    .acc_user_request_write(wr_request),
+    .acc_user_write_data(wr_data),
+    .acc_user_done(acc_done)
+  );
+
+
   initial begin
     clk = 0;
     rst = 1;
@@ -85,27 +106,6 @@ module testbench_sim
       $finish;
     end 
   end
-
-
-  cgra_acc
-  #(
-    .INTERFACE_DATA_WIDTH(INTERFACE_DATA_WIDTH)
-  )
-  cgra_acc
-  (
-    .clk(clk),
-    .rst(rst),
-    .start(start),
-    .acc_user_done_rd_data(rd_done),
-    .acc_user_done_wr_data(wr_done),
-    .acc_user_request_read(rd_request),
-    .acc_user_read_data_valid(rd_valid),
-    .acc_user_read_data(rd_data),
-    .acc_user_available_write(wr_available),
-    .acc_user_request_write(wr_request),
-    .acc_user_write_data(wr_data),
-    .acc_user_done(acc_done)
-  );
 
 
 endmodule
