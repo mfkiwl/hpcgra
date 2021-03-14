@@ -952,59 +952,81 @@ class Components:
         self.cache[name] = m
         return m
 
-    def create_data_producer(self):
-        name = 'mem_rom_control'
+    def create_data_producer(self, num_data):
+        addr_width = ceil(log2(num_data))
+
+        name = 'data_producer'
         if name in self.cache.keys():
             return self.cache[name]
         m = Module(name)
         file = m.Parameter('file', 'file.txt')
         data_width = m.Parameter('data_width', 512)
-        addr_width = m.Parameter('addr_width', 16)
-        num_data = m.Parameter('num_data',10)
+
+        # Control signals for the component
         clk = m.Input('clk')
         rst = m.Input('rst')
-        re = m.Input('re')
-        '''
-        acc_user_request_read = m.Output('acc_user_request_read', self.num_in)
-        acc_user_read_data_valid = m.Input('acc_user_read_data_valid', self.num_in)
-        acc_user_read_data = m.Input('acc_user_read_data', INTERFACE_DATA_WIDTH * self.num_in)
-        '''
 
-        available = m.OutputReg('available')
-        valid = m.OutputReg('valid')
-        dout = m.Output('dout', data_width)
-        done = m.OutputReg('done')
+        # Ports for delivery of data to the consumer
+        request_read = m.Input('rd_request')
+        read_data_valid = m.OutputReg('read_data_valid')
+        read_done = m.OutputReg('rd_done')
+        read_data = m.Output('read_data', data_width)
 
-        count = m.Reg('count', addr_width + 1)
+        re = m.Wire('re')
+
+        m.EmbeddedCode("\n")
+
+        re_fsw = m.Reg('re_fsw')
+        data_counter = m.Reg('data_counter', addr_width)
+
+        m.EmbeddedCode("\n")
+
+        fsm_produce_data = m.Reg('fsm_produce_data', 2)
+        fsm_init = m.Localparam('fsm_init', Int(0, fsm_produce_data.width, 10))
+        fsm_produce = m.Localparam('fsm_produce', Int(1, fsm_produce_data.width, 10))
+        fsm_done = m.Localparam('fsm_done', Int(2, fsm_produce_data.width, 10))
+
+        m.EmbeddedCode("\n")
+
+        re.assign(Or(re_fsw, request_read))
 
         m.Always(Posedge(clk))(
             If(rst)(
-                count(0),
-                available(0),
-                valid(0),
-                done(0)
+                data_counter(Int(0, data_counter.width, 10)),
+                read_data_valid(Int(0, 1, 10)),
+                read_done(Int(0, 1, 10)),
+                fsm_produce_data(fsm_init)
             ).Else(
-                done(0),
-                valid(0),
-                available(0),
-                If(re)(
-                    valid(1),
-                    count.inc(),
-                ),
-                If(count >= Power(2, addr_width))(
-                    done(1)
-                ).Else(
-                    available(1)
+                Case(fsm_produce_data)(
+                    When(fsm_init)(
+                        re_fsw(Int(1, 1, 10)),
+                        fsm_produce_data(fsm_produce)
+                    ),
+                    When(fsm_produce)(
+                        re_fsw(Int(0, 1, 10)),
+                        read_data_valid(Int(1, 1, 10)),
+                        If(request_read)(
+                            # read_data_valid(request_read),
+                            data_counter(data_counter + Int(1, data_counter.width, 10)),
+                            # fsm_produce_data(fsm_produce),
+                        ),
+                        If(data_counter == Int(num_data - 1, data_counter.width, 10))(
+                            fsm_produce_data(fsm_done)
+                        )
+                    ),
+                    When(fsm_done)(
+                        read_data_valid(Int(0, 1, 10)),
+                        read_done(Int(1, 1, 10))
+                    ),
                 )
             )
         )
-
         params = [('init_file', file), ('data_width', data_width), ('addr_width', addr_width)]
-        con = [('clk', clk), ('we', Int(0, 1, 2)), ('re', re), ('raddr', count[0:addr_width]),
-               ('waddr', count[0:addr_width]),
+        con = [('clk', clk), ('we', Int(0, 1, 2)), ('re', re), ('raddr', data_counter),
+               ('waddr', data_counter),
                ('din', Repeat(Int(0, 1, 2), data_width)),
-               ('dout', dout)]
-        mem = self.create_memory()
+               ('dout', read_data)]
+        mem = Components().create_memory()
         m.Instance(mem, 'mem_rom', params, con)
 
         initialize_regs(m)

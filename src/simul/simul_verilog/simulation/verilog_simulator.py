@@ -8,9 +8,10 @@ from src.simul.util.os_util_functions import correct_directory_path, search_a_pa
 
 class VerilogSimulator:
 
-    def __init__(self, files, paths: str):
+    def __init__(self, files, tam_input_data: int, paths: str):
         self._files = files
         self._paths = paths
+        self._tam_input_data = tam_input_data
         # creating the initial config file for the CGRA simulation
         self._initial_conf = Bitstream(self.search_json_file(),
                                        self.search_asm_file()).get()
@@ -20,7 +21,8 @@ class VerilogSimulator:
         self._cgra_acc = CgraAccelerator(self._cgra)
         # create the HW verilog file
         cgra_acc_testbench_verilog = \
-            create_testbench_sim(self._cgra_acc).to_verilog()
+            create_testbench_sim(self._cgra_acc,
+                                 self._tam_input_data).to_verilog()
         method = "w"
         file = correct_directory_path(
             search_a_path("verilog_simul/verilog_src", paths)) + "test_bench.v"

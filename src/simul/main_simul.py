@@ -28,7 +28,7 @@ class MainSimul:
                            self._tam_input_data, self._paths)
 
     def start_verilog_simul(self):
-        verilogsimulator = VerilogSimulator(self._files, self._paths)
+        verilogsimulator = VerilogSimulator(self._files, self._tam_input_data, self._paths)
         verilogsimulator.start()
 
     def start_both_simul(self):
@@ -39,7 +39,7 @@ class MainSimul:
 if __name__ == "__main__":
     test_path = "/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/test1/"
     type_of_input_generation = 1
-    tam_input_data = 10
+    tam_input_data = 5
     '''
     if len(sys.argv) > 1:
         test_path = sys.argv[1]

@@ -67,10 +67,11 @@ def create_testbench_synth(cgraAcc):
     return m
 
 
-def create_testbench_sim(cgraAcc):
+def create_testbench_sim(cgraAcc, num_data):
+    file = "/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/Exemplos/example_cgra_2x2/loopback.bit"
     num_in = len(cgraAcc.cgra.input_ids)
     num_out = len(cgraAcc.cgra.output_ids)
-    mem_crtl = Components().create_data_producer()
+    data_producer = Components().create_data_producer(num_data)
 
     m = Module('testbench_sim')
 
@@ -93,21 +94,13 @@ def create_testbench_sim(cgraAcc):
     wr_data = m.Wire('wr_data', Mul(INTERFACE_DATA_WIDTH, num_out))
     acc_done = m.Wire('acc_done')
 
-    params = [('INTERFACE_DATA_WIDTH', INTERFACE_DATA_WIDTH)]
-    con = [('clk', clk), ('rst', rst), ('start', start),
-           ('acc_user_done_rd_data', rd_done),
-           ('acc_user_done_wr_data', wr_done),
-           ('acc_user_request_read', rd_request),
-           ('acc_user_read_data_valid', rd_valid),
-           ('acc_user_read_data', rd_data),
-           ('acc_user_available_write', wr_available),
-           ('acc_user_request_write', wr_request),
-           ('acc_user_write_data', wr_data),
-           ('acc_user_done', acc_done)
-           ]
-    module = cgraAcc.get()
+    for i in range(num_in):
+        params = [('file', file), ('data_width', INTERFACE_DATA_WIDTH)]
+        con = [('clk', clk), ('rst', rst), ('rd_request', rd_request[i]),
+               ('read_data_valid', rd_valid[i]), ('rd_done', rd_done[i]),
+               ('read_data', rd_data[Mul(i, INTERFACE_DATA_WIDTH):Mul(i + 1, INTERFACE_DATA_WIDTH)])]
 
-    m.Instance(module, module.name, params, con)
+        m.Instance(data_producer, 'data_producer_%d' % i, params, con)
 
     initialize_regs(m, {'clk': 0, 'rst': 1, 'wr_available': 2 ** num_out - 1})
 
@@ -129,14 +122,30 @@ def create_testbench_sim(cgraAcc):
             Finish()
         )
     )
+
+    '''params = [('INTERFACE_DATA_WIDTH', INTERFACE_DATA_WIDTH)]
+    con = [('clk', clk), ('rst', rst), ('start', start),
+           ('acc_user_done_rd_data', rd_done),
+           ('acc_user_done_wr_data', wr_done),
+           ('acc_user_request_read', rd_request),
+           ('acc_user_read_data_valid', rd_valid),
+           ('acc_user_read_data', rd_data),
+           ('acc_user_available_write', wr_available),
+           ('acc_user_request_write', wr_request),
+           ('acc_user_write_data', wr_data),
+           ('acc_user_done', acc_done)
+           ]
+    module = cgraAcc.get()
+
+    m.Instance(module, module.name, params, con)
     '''
-    for i in range(num_in):
+
+    '''for i in range(num_in):
         params = [('file', 'in%d.txt' % i), ('data_width', INTERFACE_DATA_WIDTH), ('addr_width', 10)]
         con = [('clk', clk), ('rst', rst), ('re', rd_request[i]), ('available', rd_available[i]),
                ('valid', rd_valid[i]), ('done', rd_done[i]),
                ('dout', rd_data[Mul(i, INTERFACE_DATA_WIDTH):Mul(i + 1, INTERFACE_DATA_WIDTH)])]
 
-        m.Instance(mem_crtl, 'mem_rom_control_%d' % i, params, con)
+        m.Instance(data_producer, 'mem_rom_control_%d' % i, params, con)
     '''
     return m
-
