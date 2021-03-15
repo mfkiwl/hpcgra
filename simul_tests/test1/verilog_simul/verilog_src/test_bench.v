@@ -10,12 +10,12 @@ module testbench_sim
   reg rst;
   reg start;
   wire [2-1:0] rd_done;
-  reg [1-1:0] wr_done;
-  wire [2-1:0] rd_available;
-  reg [1-1:0] wr_available;
+  wire [1-1:0] wr_done;
+  wire [1-1:0] consumer_done;
   wire [2-1:0] rd_request;
   wire [2-1:0] rd_valid;
   wire [INTERFACE_DATA_WIDTH*2-1:0] rd_data;
+  wire [1-1:0] wr_available;
   wire [1-1:0] wr_request;
   wire [INTERFACE_DATA_WIDTH*1-1:0] wr_data;
   wire acc_done;
@@ -23,7 +23,9 @@ module testbench_sim
   data_producer
   #(
     .file("/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/Exemplos/example_cgra_2x2/loopback.bit"),
-    .data_width(INTERFACE_DATA_WIDTH)
+    .data_width(INTERFACE_DATA_WIDTH),
+    .num_data(5),
+    .addr_width(3)
   )
   data_producer_0
   (
@@ -39,7 +41,9 @@ module testbench_sim
   data_producer
   #(
     .file("/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/Exemplos/example_cgra_2x2/loopback.bit"),
-    .data_width(INTERFACE_DATA_WIDTH)
+    .data_width(INTERFACE_DATA_WIDTH),
+    .num_data(5),
+    .addr_width(3)
   )
   data_producer_1
   (
@@ -49,6 +53,27 @@ module testbench_sim
     .read_data_valid(rd_valid[1]),
     .rd_done(rd_done[1]),
     .read_data(rd_data[2*INTERFACE_DATA_WIDTH-1:1*INTERFACE_DATA_WIDTH])
+  );
+
+
+  data_consumer
+  #(
+    .data_width(INTERFACE_DATA_WIDTH),
+    .num_data(1),
+    .counter_data_width(1),
+    .wait_to_write(9),
+    .counter_wait_width(4),
+    .loop_write(1),
+    .counter_loop_width(1)
+  )
+  data_consumer_0
+  (
+    .clk(clk),
+    .rst(rst),
+    .wr_available(wr_available[0]),
+    .wr_request(wr_request[0]),
+    .wr_data(rd_data[1*INTERFACE_DATA_WIDTH-1:0*INTERFACE_DATA_WIDTH]),
+    .consumer_done(consumer_done[0])
   );
 
 
@@ -77,8 +102,6 @@ module testbench_sim
     clk = 0;
     rst = 1;
     start = 0;
-    wr_done = 0;
-    wr_available = 1;
   end
 
 
@@ -115,7 +138,9 @@ endmodule
 module data_producer #
 (
   parameter file = "file.txt",
-  parameter data_width = 512
+  parameter data_width = 512,
+  parameter num_data = 16,
+  parameter addr_width = 4
 )
 (
   input clk,
@@ -130,7 +155,7 @@ module data_producer #
 
 
   reg re_fsw;
-  reg [3-1:0] data_counter;
+  reg [addr_width-1:0] data_counter;
 
 
   reg [2-1:0] fsm_produce_data;
@@ -144,7 +169,7 @@ module data_producer #
 
   always @(posedge clk) begin
     if(rst) begin
-      data_counter <= 3'd0;
+      data_counter <= 0;
       read_data_valid <= 1'd0;
       rd_done <= 1'd0;
       fsm_produce_data <= fsm_init;
@@ -155,7 +180,7 @@ module data_producer #
           fsm_produce_data <= fsm_produce1;
         end
         fsm_produce1: begin
-          data_counter <= data_counter + 3'd1;
+          data_counter <= data_counter + 1;
           read_data_valid <= 1'd1;
           re_fsw <= 1'd0;
           fsm_produce_data <= fsm_produce2;
@@ -164,7 +189,7 @@ module data_producer #
           if(rd_request) begin
             fsm_produce_data <= fsm_produce1;
           end 
-          if(data_counter == 3'd4) begin
+          if(data_counter == num_data - 1) begin
             fsm_produce_data <= fsm_done;
           end 
         end
@@ -181,7 +206,7 @@ module data_producer #
   #(
     .init_file(file),
     .data_width(data_width),
-    .addr_width(3)
+    .addr_width(addr_width)
   )
   mem_rom
   (
@@ -250,6 +275,65 @@ module memory #
   end
 
   //synthesis translate_on
+
+endmodule
+
+
+
+module data_consumer #
+(
+  parameter data_width = 512,
+  parameter num_data = 5,
+  parameter counter_data_width = 3,
+  parameter wait_to_write = 9,
+  parameter counter_wait_width = 4,
+  parameter loop_write = 0,
+  parameter counter_loop_width = 1
+)
+(
+  input clk,
+  input rst,
+  output reg wr_available,
+  input wr_request,
+  input [data_width-1:0] wr_data,
+  output reg consumer_done
+);
+
+  reg [counter_wait_width-1:0] counter_wait;
+  reg [counter_loop_width-1:0] counter_loop;
+  reg [counter_data_width-1:0] counter_data;
+  reg [2-1:0] fsm_read_data;
+  localparam fsm_wait = 2'd0;
+  localparam fsm_read = 2'd1;
+
+  always @(posedge clk) begin
+    if(rst) begin
+      counter_wait <= 0;
+      counter_loop <= 0;
+      counter_data <= 0;
+      fsm_read <= fsm_wait;
+    end else begin
+      case(fsm_read)
+        fsm_wait: begin
+          if(counter_wait >= wait_to_write - 1) begin
+            counter_wait <= counter_wait + 1;
+            fsm_read <= fsm_read;
+          end 
+        end
+      endcase
+    end
+  end
+
+
+  initial begin
+    wr_available = 0;
+    consumer_done = 0;
+    counter_wait = 0;
+    counter_loop = 0;
+    counter_data = 0;
+    fsm_read_data = 0;
+  end
+
 
 endmodule
 

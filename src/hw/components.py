@@ -1,7 +1,7 @@
-from math import ceil, log
+from math import ceil
 
 from veriloggen import *
-from veriloggen.types.util import log2
+from veriloggen.types.util import *
 
 from src.hw.utils import initialize_regs, bits
 
@@ -952,15 +952,15 @@ class Components:
         self.cache[name] = m
         return m
 
-    def create_data_producer(self, num_data):
-        addr_width = ceil(log2(num_data))
-
+    def create_data_producer(self):
         name = 'data_producer'
         if name in self.cache.keys():
             return self.cache[name]
         m = Module(name)
         file = m.Parameter('file', 'file.txt')
         data_width = m.Parameter('data_width', 512)
+        num_data = m.Parameter('num_data', 16)
+        addr_width = m.Parameter('addr_width', 4)
 
         # Control signals for the component
         clk = m.Input('clk')
@@ -983,8 +983,10 @@ class Components:
 
         fsm_produce_data = m.Reg('fsm_produce_data', 2)
         fsm_init = m.Localparam('fsm_init', Int(0, fsm_produce_data.width, 10))
-        fsm_produce1 = m.Localparam('fsm_produce1', Int(1, fsm_produce_data.width, 10))
-        fsm_produce2 = m.Localparam('fsm_produce2', Int(2, fsm_produce_data.width, 10))
+        fsm_produce1 = m.Localparam('fsm_produce1',
+                                    Int(1, fsm_produce_data.width, 10))
+        fsm_produce2 = m.Localparam('fsm_produce2',
+                                    Int(2, fsm_produce_data.width, 10))
         fsm_done = m.Localparam('fsm_done', Int(3, fsm_produce_data.width, 10))
 
         m.EmbeddedCode("\n")
@@ -993,10 +995,10 @@ class Components:
 
         m.Always(Posedge(clk))(
             If(rst)(
-                data_counter(Int(0, data_counter.width, 10)),
+                data_counter(0),
                 read_data_valid(Int(0, 1, 10)),
                 read_done(Int(0, 1, 10)),
-                fsm_produce_data(fsm_init)
+                fsm_produce_data(fsm_init),
             ).Else(
                 Case(fsm_produce_data)(
                     When(fsm_init)(
@@ -1004,18 +1006,16 @@ class Components:
                         fsm_produce_data(fsm_produce1)
                     ),
                     When(fsm_produce1)(
-                        data_counter(data_counter + Int(1, data_counter.width, 10)),
+                        data_counter(data_counter + 1),
                         read_data_valid(Int(1, 1, 10)),
                         re_fsw(Int(0, 1, 10)),
                         fsm_produce_data(fsm_produce2),
                     ),
                     When(fsm_produce2)(
                         If(request_read)(
-                            # data_counter(data_counter + Int(1, data_counter.width, 10)),
-                            # read_data_valid(Int(0, 1, 10)),
                             fsm_produce_data(fsm_produce1),
                         ),
-                        If(data_counter == Int(num_data - 1, data_counter.width, 10))(
+                        If(data_counter == num_data - 1)(
                             fsm_produce_data(fsm_done)
                         )
                     ),
@@ -1026,8 +1026,12 @@ class Components:
                 )
             )
         )
-        params = [('init_file', file), ('data_width', data_width), ('addr_width', addr_width)]
-        con = [('clk', clk), ('we', Int(0, 1, 2)), ('re', re), ('raddr', data_counter),
+        params = [('init_file', file), ('data_width', data_width),
+                  ('addr_width', addr_width)]
+        con = [('clk', clk),
+               ('we', Int(0, 1, 2)),
+               ('re', re),
+               ('raddr', data_counter),
                ('waddr', data_counter),
                ('din', Repeat(Int(0, 1, 2), data_width)),
                ('dout', read_data)]
@@ -1039,16 +1043,19 @@ class Components:
 
         return m
 
-    def create_data_consumer(self, num_data: int, wait_to_write: int, loop_write: int):
-        counter_wait_width = ceil(log2(wait_to_write))
-        counter_loop_width = ceil(log2(loop_write))
-        counter_data_width = ceil(log2(num_data))
-
+    def create_data_consumer(self):
         name = 'data_consumer'
         if name in self.cache.keys():
             return self.cache[name]
         m = Module(name)
         data_width = m.Parameter('data_width', 512)
+        num_data = m.Parameter('num_data', 5)
+        counter_data_width = m.Parameter('counter_data_width', 3)
+        wait_to_write = m.Parameter('wait_to_write', 9)
+        counter_wait_width = m.Parameter('counter_wait_width', 4)
+        loop_write = m.Parameter('loop_write', 0)
+        counter_loop_width = m.Parameter('counter_loop_width', 1)
+
         # Control signals for the component
         clk = m.Input('clk')
         rst = m.Input('rst')
@@ -1057,7 +1064,7 @@ class Components:
         wr_available = m.OutputReg('wr_available')
         wr_request = m.Input('wr_request')
         wr_data = m.Input('wr_data', data_width)
-        acc_done = m.Input('acc_done')
+        consumer_done = m.OutputReg('consumer_done')
 
         counter_wait = m.Reg('counter_wait', counter_wait_width)
         counter_loop = m.Reg('counter_loop', counter_loop_width)
@@ -1069,19 +1076,17 @@ class Components:
 
         m.Always(Posedge(clk))(
             If(rst)(
-                counter_wait(Int(0, counter_wait.width, 10)),
-                counter_loop(Int(0, counter_loop.width, 10)),
-                counter_data(Int(0, counter_data.width, 10)),
+                counter_wait(0),
+                counter_loop(0),
+                counter_data(0),
                 fsm_read(fsm_wait),
             ).Else(
                 Case(fsm_read)(
                     When(fsm_wait)(
-                        If(counter_wait >= Int(wait_to_write - 1, counter_wait.width, 10))(
-                            counter_wait(counter_wait + 1, counter_wait.width, 10),
+                        If(counter_wait >= wait_to_write - 1)(
+                            counter_wait(counter_wait + 1),
                             fsm_read(fsm_read),
                         )
-                    ).When(fsm_read)(
-                        If()
                     )
                 ),
             )

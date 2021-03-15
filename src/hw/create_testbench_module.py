@@ -1,5 +1,7 @@
 from veriloggen import *
 
+from math import ceil, log2
+
 from src.hw.components import Components
 from src.hw.utils import initialize_regs
 
@@ -72,9 +74,8 @@ def create_testbench_sim(cgraAcc, num_data: int, wait_to_write: int,
     file = "/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/Exemplos/example_cgra_2x2/loopback.bit"
     num_in = len(cgraAcc.cgra.input_ids)
     num_out = len(cgraAcc.cgra.output_ids)
-    data_producer = Components().create_data_producer(num_data)
-    data_consumer = Components().create_data_consumer(num_data, wait_to_write,
-                                                      loop_write)
+    data_producer = Components().create_data_producer()
+    data_consumer = Components().create_data_consumer()
 
     m = Module('testbench_sim')
 
@@ -85,28 +86,51 @@ def create_testbench_sim(cgraAcc, num_data: int, wait_to_write: int,
     start = m.Reg('start')
 
     rd_done = m.Wire('rd_done', num_in)
-    wr_done = m.Reg('wr_done', num_out)
-    rd_available = m.Wire('rd_available', num_in)
-    wr_available = m.Reg('wr_available', num_out)
+    wr_done = m.Wire('wr_done', num_out)
+    consumer_done = m.Wire('consumer_done', num_out)
 
     rd_request = m.Wire('rd_request', num_in)
     rd_valid = m.Wire('rd_valid', num_in)
     rd_data = m.Wire('rd_data', Mul(INTERFACE_DATA_WIDTH, num_in))
 
+    wr_available = m.Wire('wr_available', num_out)
     wr_request = m.Wire('wr_request', num_out)
     wr_data = m.Wire('wr_data', Mul(INTERFACE_DATA_WIDTH, num_out))
+
     acc_done = m.Wire('acc_done')
 
     for i in range(num_in):
-        params = [('file', file), ('data_width', INTERFACE_DATA_WIDTH)]
-        con = [('clk', clk), ('rst', rst), ('rd_request', rd_request[i]),
-               ('read_data_valid', rd_valid[i]), ('rd_done', rd_done[i]),
+        params = [('file', file), ('data_width', INTERFACE_DATA_WIDTH),
+                  ('num_data', num_data), ('addr_width', ceil(log2(num_data)))]
+        con = [('clk', clk),
+               ('rst', rst),
+               ('rd_request', rd_request[i]),
+               ('read_data_valid', rd_valid[i]),
+               ('rd_done', rd_done[i]),
                ('read_data', rd_data[Mul(i, INTERFACE_DATA_WIDTH):
                                      Mul(i + 1, INTERFACE_DATA_WIDTH)])]
 
         m.Instance(data_producer, 'data_producer_%d' % i, params, con)
 
-    #for i in range(num_out):
+    for i in range(num_out):
+        params = [('data_width', INTERFACE_DATA_WIDTH),
+                  ('num_data', num_data - 4),
+                  ('counter_data_width', ceil(log2(num_data - 4))
+                  if ceil(log2(num_data - 4)) > 0 else 1),
+                  ('wait_to_write', wait_to_write),
+                  ('counter_wait_width', ceil(log2(wait_to_write))
+                  if ceil(log2(wait_to_write)) > 0 else 1),
+                  ('loop_write', loop_write),
+                  ('counter_loop_width', ceil(log2(loop_write))
+                  if ceil(log2(loop_write)) > 0 else 1)]
+        con = [('clk', clk),
+               ('rst', rst),
+               ('wr_available',wr_available[i]),
+               ('wr_request',wr_request[i]),
+               ('wr_data',rd_data[Mul(i, INTERFACE_DATA_WIDTH):
+                                     Mul(i + 1, INTERFACE_DATA_WIDTH)]),
+               ('consumer_done',consumer_done[i])]
+        m.Instance(data_consumer, 'data_consumer_%d' % i, params, con)
 
     params = [('INTERFACE_DATA_WIDTH', INTERFACE_DATA_WIDTH)]
     con = [('clk', clk), ('rst', rst), ('start', start),

@@ -22,7 +22,7 @@ class VerilogSimulator:
         # create the HW verilog file
         cgra_acc_testbench_verilog = \
             create_testbench_sim(self._cgra_acc,
-                                 self._tam_input_data).to_verilog()
+                                 self._tam_input_data, 9, 1).to_verilog()
         method = "w"
         file = correct_directory_path(
             search_a_path("verilog_simul/verilog_src", paths)) + "test_bench.v"

@@ -28,7 +28,7 @@ def search_a_path(path_name: str, paths: str) -> str:
 
 
 def correct_directory_path(path: str):
-    if (path[len(path)-1] != "/"):
+    if (path[len(path) - 1] != "/"):
         path += "/"
     return path
 
