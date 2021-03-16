@@ -522,7 +522,7 @@ class Components:
         available_pop = m.Input('available_pop', num_pe_io_in)
         available_push = m.Input('available_push', num_pe_io_out)
 
-        read_fifo_done = m.Input('read_fifo_done', num_pe_io_out)
+        read_fifo_done = m.Input('read_fifo_done', num_pe_io_in)
         write_fifo_done = m.Input('write_fifo_done', num_pe_io_out)
 
         en = m.Output('en')
@@ -972,55 +972,46 @@ class Components:
         read_done = m.OutputReg('rd_done')
         read_data = m.Output('read_data', data_width)
 
-        re = m.Wire('re')
-
-        m.EmbeddedCode("\n")
-
-        re_fsw = m.Reg('re_fsw')
+        re = m.Reg('re')
         data_counter = m.Reg('data_counter', addr_width)
 
         m.EmbeddedCode("\n")
 
         fsm_produce_data = m.Reg('fsm_produce_data', 2)
         fsm_init = m.Localparam('fsm_init', Int(0, fsm_produce_data.width, 10))
-        fsm_produce1 = m.Localparam('fsm_produce1',
-                                    Int(1, fsm_produce_data.width, 10))
-        fsm_produce2 = m.Localparam('fsm_produce2',
-                                    Int(2, fsm_produce_data.width, 10))
-        fsm_done = m.Localparam('fsm_done', Int(3, fsm_produce_data.width, 10))
+        fsm_produce = m.Localparam('fsm_produce',
+                                   Int(1, fsm_produce_data.width, 10))
+        fsm_done = m.Localparam('fsm_done', Int(2, fsm_produce_data.width, 10))
 
         m.EmbeddedCode("\n")
-
-        re.assign(Or(re_fsw, request_read))
 
         m.Always(Posedge(clk))(
             If(rst)(
                 data_counter(0),
                 read_data_valid(Int(0, 1, 10)),
                 read_done(Int(0, 1, 10)),
+                re(Int(0, 1, 10)),
                 fsm_produce_data(fsm_init),
             ).Else(
                 Case(fsm_produce_data)(
                     When(fsm_init)(
-                        re_fsw(Int(1, 1, 10)),
-                        fsm_produce_data(fsm_produce1)
+                        re(Int(1, 1, 10)),
+                        fsm_produce_data(fsm_produce)
                     ),
-                    When(fsm_produce1)(
-                        data_counter(data_counter + 1),
+                    When(fsm_produce)(
+                        re(Int(0, 1, 10)),
                         read_data_valid(Int(1, 1, 10)),
-                        re_fsw(Int(0, 1, 10)),
-                        fsm_produce_data(fsm_produce2),
-                    ),
-                    When(fsm_produce2)(
                         If(request_read)(
-                            fsm_produce_data(fsm_produce1),
+                            re(Int(1, 1, 10)),
+                            data_counter(data_counter + 1),
+                            read_data_valid(Int(0, 1, 10)),
                         ),
-                        If(data_counter == num_data - 1)(
+                        If(data_counter == num_data)(
+                            read_data_valid(Int(0, 1, 10)),
                             fsm_produce_data(fsm_done)
                         )
                     ),
                     When(fsm_done)(
-                        read_data_valid(Int(0, 1, 10)),
                         read_done(Int(1, 1, 10))
                     ),
                 )

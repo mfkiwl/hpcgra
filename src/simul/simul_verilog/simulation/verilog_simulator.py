@@ -53,6 +53,7 @@ class VerilogSimulator:
         cgra_acc_testbench_verilog = \
             create_testbench_sim(cgra_acc,
                                  tam_input_data,
+                                 len(initial_conf.split("\n")),
                                  input_files).to_verilog()
         method = "w"
         file = correct_directory_path(

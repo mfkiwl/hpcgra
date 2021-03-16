@@ -69,7 +69,7 @@ def create_testbench_synth(cgraAcc):
     return m
 
 
-def create_testbench_sim(cgraAcc, num_data: int, files):
+def create_testbench_sim(cgraAcc, num_data: int, conf_lines, files):
     num_in = len(cgraAcc.cgra.input_ids)
     num_out = len(cgraAcc.cgra.output_ids)
     data_producer = Components().create_data_producer()
@@ -106,8 +106,10 @@ def create_testbench_sim(cgraAcc, num_data: int, files):
     m.EmbeddedCode(content)
 
     for i in range(num_in):
-        params = [('file', files[i]), ('data_width', INTERFACE_DATA_WIDTH),
-                  ('num_data', num_data), ('addr_width', ceil(log2(num_data)))]
+        params = [('file', files[i]),
+                  ('data_width', INTERFACE_DATA_WIDTH),
+                  ('num_data', num_data if i == 0 else num_data - conf_lines),
+                  ('addr_width', ceil(log2(num_data)))]
         con = [('clk', clk),
                ('rst', rst),
                ('rd_request', rd_request[i]),
@@ -125,7 +127,7 @@ def create_testbench_sim(cgraAcc, num_data: int, files):
                ('rst', rst),
                ('wr_available', wr_available[i]),
                ('wr_request', wr_request[i]),
-               ('wr_data', rd_data[Mul(i, INTERFACE_DATA_WIDTH):
+               ('wr_data', wr_data[Mul(i, INTERFACE_DATA_WIDTH):
                                    Mul(i + 1, INTERFACE_DATA_WIDTH)])]
         m.Instance(data_consumer, 'data_consumer_%d' % i, params, con)
 

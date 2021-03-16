@@ -44,7 +44,7 @@ module testbench_sim
   #(
     .file("/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/test1/verilog_simul/input_files/1.txt"),
     .data_width(INTERFACE_DATA_WIDTH),
-    .num_data(5),
+    .num_data(1),
     .addr_width(3)
   )
   data_producer_1
@@ -69,7 +69,7 @@ module testbench_sim
     .rst(rst),
     .wr_available(wr_available[0]),
     .wr_request(wr_request[0]),
-    .wr_data(rd_data[1*INTERFACE_DATA_WIDTH-1:0*INTERFACE_DATA_WIDTH])
+    .wr_data(wr_data[1*INTERFACE_DATA_WIDTH-1:0*INTERFACE_DATA_WIDTH])
   );
 
 
@@ -147,50 +147,44 @@ module data_producer #
   output [data_width-1:0] read_data
 );
 
-  wire re;
-
-
-  reg re_fsw;
+  reg re;
   reg [addr_width-1:0] data_counter;
 
 
   reg [2-1:0] fsm_produce_data;
   localparam fsm_init = 2'd0;
-  localparam fsm_produce1 = 2'd1;
-  localparam fsm_produce2 = 2'd2;
-  localparam fsm_done = 2'd3;
+  localparam fsm_produce = 2'd1;
+  localparam fsm_done = 2'd2;
 
 
-  assign re = re_fsw | rd_request;
 
   always @(posedge clk) begin
     if(rst) begin
       data_counter <= 0;
       read_data_valid <= 1'd0;
       rd_done <= 1'd0;
+      re <= 1'd0;
       fsm_produce_data <= fsm_init;
     end else begin
       case(fsm_produce_data)
         fsm_init: begin
-          re_fsw <= 1'd1;
-          fsm_produce_data <= fsm_produce1;
+          re <= 1'd1;
+          fsm_produce_data <= fsm_produce;
         end
-        fsm_produce1: begin
-          data_counter <= data_counter + 1;
+        fsm_produce: begin
+          re <= 1'd0;
           read_data_valid <= 1'd1;
-          re_fsw <= 1'd0;
-          fsm_produce_data <= fsm_produce2;
-        end
-        fsm_produce2: begin
           if(rd_request) begin
-            fsm_produce_data <= fsm_produce1;
+            re <= 1'd1;
+            data_counter <= data_counter + 1;
+            read_data_valid <= 1'd0;
           end 
-          if(data_counter == num_data - 1) begin
+          if(data_counter == num_data) begin
+            read_data_valid <= 1'd0;
             fsm_produce_data <= fsm_done;
           end 
         end
         fsm_done: begin
-          read_data_valid <= 1'd0;
           rd_done <= 1'd1;
         end
       endcase
@@ -219,7 +213,7 @@ module data_producer #
   initial begin
     read_data_valid = 0;
     rd_done = 0;
-    re_fsw = 0;
+    re = 0;
     data_counter = 0;
     fsm_produce_data = 0;
   end
@@ -884,7 +878,7 @@ module cgra0_control_exec
   input [16-1:0] write_fifo_loop_ignore,
   input [2-1:0] available_pop,
   input [1-1:0] available_push,
-  input [1-1:0] read_fifo_done,
+  input [2-1:0] read_fifo_done,
   input [1-1:0] write_fifo_done,
   output en,
   output [2-1:0] en_pop,
