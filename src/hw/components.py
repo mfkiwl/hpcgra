@@ -1048,13 +1048,8 @@ class Components:
         if name in self.cache.keys():
             return self.cache[name]
         m = Module(name)
+        id = m.Parameter('id', 0)
         data_width = m.Parameter('data_width', 512)
-        num_data = m.Parameter('num_data', 5)
-        counter_data_width = m.Parameter('counter_data_width', 3)
-        wait_to_write = m.Parameter('wait_to_write', 9)
-        counter_wait_width = m.Parameter('counter_wait_width', 4)
-        loop_write = m.Parameter('loop_write', 0)
-        counter_loop_width = m.Parameter('counter_loop_width', 1)
 
         # Control signals for the component
         clk = m.Input('clk')
@@ -1064,30 +1059,14 @@ class Components:
         wr_available = m.OutputReg('wr_available')
         wr_request = m.Input('wr_request')
         wr_data = m.Input('wr_data', data_width)
-        consumer_done = m.OutputReg('consumer_done')
-
-        counter_wait = m.Reg('counter_wait', counter_wait_width)
-        counter_loop = m.Reg('counter_loop', counter_loop_width)
-        counter_data = m.Reg('counter_data', counter_data_width)
-
-        fsm_read_data = m.Reg('fsm_read_data', 2)
-        fsm_wait = m.Localparam('fsm_wait', Int(0, fsm_read_data.width, 10))
-        fsm_read = m.Localparam('fsm_read', Int(1, fsm_read_data.width, 10))
 
         m.Always(Posedge(clk))(
             If(rst)(
-                counter_wait(0),
-                counter_loop(0),
-                counter_data(0),
-                fsm_read(fsm_wait),
+                wr_available(Int(0, wr_available.width, 10)),
             ).Else(
-                Case(fsm_read)(
-                    When(fsm_wait)(
-                        If(counter_wait >= wait_to_write - 1)(
-                            counter_wait(counter_wait + 1),
-                            fsm_read(fsm_read),
-                        )
-                    )
+                wr_available(Int(1, wr_available.width, 10)),
+                If(wr_request)(
+                    Display("%s:%h", id, wr_data),
                 ),
             )
         )

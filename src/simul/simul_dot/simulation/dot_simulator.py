@@ -9,7 +9,6 @@ class DotSimulator:
         self._di = DotInterpreter(files)
         self._df = DataFlow(self._di)
         self._ticks = 0
-        self._data_in_init = {}
 
     def start(self, type_of_input_generation: int, tam_input_data: int, paths):
         self._df.create_dataflow(type_of_input_generation, tam_input_data,

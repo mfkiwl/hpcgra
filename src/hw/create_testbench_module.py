@@ -69,9 +69,7 @@ def create_testbench_synth(cgraAcc):
     return m
 
 
-def create_testbench_sim(cgraAcc, num_data: int, wait_to_write: int,
-                         loop_write: int):
-    file = "/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/Exemplos/example_cgra_2x2/loopback.bit"
+def create_testbench_sim(cgraAcc, num_data: int, files):
     num_in = len(cgraAcc.cgra.input_ids)
     num_out = len(cgraAcc.cgra.output_ids)
     data_producer = Components().create_data_producer()
@@ -99,8 +97,16 @@ def create_testbench_sim(cgraAcc, num_data: int, wait_to_write: int,
 
     acc_done = m.Wire('acc_done')
 
+    done = m.Wire('done')
+    content = "assign done = acc_done & "
+    for i in range(num_out):
+        content += "consumer_done["+str(i)+"] & "
+    content = content[0:len(content)-2]+";"
+
+    m.EmbeddedCode(content)
+
     for i in range(num_in):
-        params = [('file', file), ('data_width', INTERFACE_DATA_WIDTH),
+        params = [('file', files[i]), ('data_width', INTERFACE_DATA_WIDTH),
                   ('num_data', num_data), ('addr_width', ceil(log2(num_data)))]
         con = [('clk', clk),
                ('rst', rst),
@@ -114,22 +120,13 @@ def create_testbench_sim(cgraAcc, num_data: int, wait_to_write: int,
 
     for i in range(num_out):
         params = [('data_width', INTERFACE_DATA_WIDTH),
-                  ('num_data', num_data - 4),
-                  ('counter_data_width', ceil(log2(num_data - 4))
-                  if ceil(log2(num_data - 4)) > 0 else 1),
-                  ('wait_to_write', wait_to_write),
-                  ('counter_wait_width', ceil(log2(wait_to_write))
-                  if ceil(log2(wait_to_write)) > 0 else 1),
-                  ('loop_write', loop_write),
-                  ('counter_loop_width', ceil(log2(loop_write))
-                  if ceil(log2(loop_write)) > 0 else 1)]
+                  ('id', i)]
         con = [('clk', clk),
                ('rst', rst),
-               ('wr_available',wr_available[i]),
-               ('wr_request',wr_request[i]),
-               ('wr_data',rd_data[Mul(i, INTERFACE_DATA_WIDTH):
-                                     Mul(i + 1, INTERFACE_DATA_WIDTH)]),
-               ('consumer_done',consumer_done[i])]
+               ('wr_available', wr_available[i]),
+               ('wr_request', wr_request[i]),
+               ('wr_data', rd_data[Mul(i, INTERFACE_DATA_WIDTH):
+                                   Mul(i + 1, INTERFACE_DATA_WIDTH)])]
         m.Instance(data_consumer, 'data_consumer_%d' % i, params, con)
 
     params = [('INTERFACE_DATA_WIDTH', INTERFACE_DATA_WIDTH)]
@@ -163,7 +160,7 @@ def create_testbench_sim(cgraAcc, num_data: int, wait_to_write: int,
     m.EmbeddedCode('always #5clk=~clk;')
 
     m.Always(Posedge(clk))(
-        If(acc_done)(
+        If(done)(
             Display('ACC DONE!'),
             Finish()
         )

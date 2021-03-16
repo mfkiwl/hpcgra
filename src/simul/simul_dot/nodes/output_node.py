@@ -4,7 +4,8 @@
 
 # TODO DESCRIPTION AND COMMENTS
 # TODO TO_STRING
-from src.simul.util.os_util_functions import save_file
+from src.hw.utils import to_hex
+from src.simul.util.simul_util_functions import save_file
 from src.simul.util.queue import Queue
 from src.simul.simul_dot.nodes.node import Node
 
@@ -30,7 +31,7 @@ class OutputNode(Node):
             method = "w"
             content = ""
             while self._data_out.get_size() > 0:
-                content += str(self._data_out.get()) + "\n"
+                content += to_hex(self._data_out.get(), 16) + "\n"
             save_file(file, content, method)
             self._done = 1
             return

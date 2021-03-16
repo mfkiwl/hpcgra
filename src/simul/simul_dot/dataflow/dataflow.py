@@ -2,7 +2,7 @@ from src.simul.simul_dot.nodes.add_node import AddNode
 from src.simul.simul_dot.nodes.input_node import InputNode
 from src.simul.simul_dot.nodes.output_node import OutputNode
 from src.simul.simul_dot.dot.dot_interpreter import DotInterpreter
-from src.simul.util.os_util_functions import search_a_path, correct_directory_path
+from src.simul.util.simul_util_functions import search_a_path, correct_directory_path
 
 
 # TODO DESCRIPTIONS AND COMMENTS
@@ -46,9 +46,7 @@ class DataFlow:
         for n in nodes:
             node = ""
             if opcodes[n] == 'input':
-                node = InputNode(n, type_of_input_generation, tam_input_data,
-                                 correct_directory_path(
-                                     search_a_path("dot_simul/input_files", paths)))
+                node = InputNode(n, type_of_input_generation, tam_input_data)
             elif opcodes[n] == 'output':
                 node = OutputNode(n, correct_directory_path(
                     search_a_path("dot_simul/output_files", paths)))

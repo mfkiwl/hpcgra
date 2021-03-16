@@ -19,10 +19,12 @@ module testbench_sim
   wire [1-1:0] wr_request;
   wire [INTERFACE_DATA_WIDTH*1-1:0] wr_data;
   wire acc_done;
+  wire done;
+  assign done = acc_done & consumer_done[0] ;
 
   data_producer
   #(
-    .file("/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/Exemplos/example_cgra_2x2/loopback.bit"),
+    .file("/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/test1/verilog_simul/input_files/0.txt"),
     .data_width(INTERFACE_DATA_WIDTH),
     .num_data(5),
     .addr_width(3)
@@ -40,7 +42,7 @@ module testbench_sim
 
   data_producer
   #(
-    .file("/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/Exemplos/example_cgra_2x2/loopback.bit"),
+    .file("/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/test1/verilog_simul/input_files/1.txt"),
     .data_width(INTERFACE_DATA_WIDTH),
     .num_data(5),
     .addr_width(3)
@@ -59,12 +61,7 @@ module testbench_sim
   data_consumer
   #(
     .data_width(INTERFACE_DATA_WIDTH),
-    .num_data(1),
-    .counter_data_width(1),
-    .wait_to_write(9),
-    .counter_wait_width(4),
-    .loop_write(1),
-    .counter_loop_width(1)
+    .id(0)
   )
   data_consumer_0
   (
@@ -72,8 +69,7 @@ module testbench_sim
     .rst(rst),
     .wr_available(wr_available[0]),
     .wr_request(wr_request[0]),
-    .wr_data(rd_data[1*INTERFACE_DATA_WIDTH-1:0*INTERFACE_DATA_WIDTH]),
-    .consumer_done(consumer_done[0])
+    .wr_data(rd_data[1*INTERFACE_DATA_WIDTH-1:0*INTERFACE_DATA_WIDTH])
   );
 
 
@@ -124,7 +120,7 @@ module testbench_sim
   always #5clk=~clk;
 
   always @(posedge clk) begin
-    if(acc_done) begin
+    if(done) begin
       $display("ACC DONE!");
       $finish;
     end 
@@ -282,56 +278,32 @@ endmodule
 
 module data_consumer #
 (
-  parameter data_width = 512,
-  parameter num_data = 5,
-  parameter counter_data_width = 3,
-  parameter wait_to_write = 9,
-  parameter counter_wait_width = 4,
-  parameter loop_write = 0,
-  parameter counter_loop_width = 1
+  parameter id = 0,
+  parameter data_width = 512
 )
 (
   input clk,
   input rst,
   output reg wr_available,
   input wr_request,
-  input [data_width-1:0] wr_data,
-  output reg consumer_done
+  input [data_width-1:0] wr_data
 );
 
-  reg [counter_wait_width-1:0] counter_wait;
-  reg [counter_loop_width-1:0] counter_loop;
-  reg [counter_data_width-1:0] counter_data;
-  reg [2-1:0] fsm_read_data;
-  localparam fsm_wait = 2'd0;
-  localparam fsm_read = 2'd1;
 
   always @(posedge clk) begin
     if(rst) begin
-      counter_wait <= 0;
-      counter_loop <= 0;
-      counter_data <= 0;
-      fsm_read <= fsm_wait;
+      wr_available <= 'd0;
     end else begin
-      case(fsm_read)
-        fsm_wait: begin
-          if(counter_wait >= wait_to_write - 1) begin
-            counter_wait <= counter_wait + 1;
-            fsm_read <= fsm_read;
-          end 
-        end
-      endcase
+      wr_available <= 'd1;
+      if(wr_request) begin
+        $display("%s:%h", id, wr_data);
+      end 
     end
   end
 
 
   initial begin
     wr_available = 0;
-    consumer_done = 0;
-    counter_wait = 0;
-    counter_loop = 0;
-    counter_data = 0;
-    fsm_read_data = 0;
   end
 
 

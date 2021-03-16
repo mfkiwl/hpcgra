@@ -2,6 +2,8 @@
 
 import os
 import shutil
+from src.simul.util.queue import Queue
+from random import randint
 
 
 def init_folders(paths):
@@ -37,3 +39,20 @@ def save_file(file: str, content: str, method: str):
     file = open(file, method)
     file.writelines(content)
     file.close()
+
+
+def generate_input_sequence(type_of_generation: int, tam_in: int) -> Queue:
+    data_in = Queue()
+    if type_of_generation == 0:
+        for i in range(tam_in):
+            n = 1
+            data_in.put(n)
+    elif type_of_generation == 1:
+        for i in range(tam_in):
+            n = i + 1
+            data_in.put(n)
+    elif type_of_generation == 2:
+        for i in range(tam_in):
+            n = randint(0, 1000)
+            data_in.put(n)
+    return data_in
