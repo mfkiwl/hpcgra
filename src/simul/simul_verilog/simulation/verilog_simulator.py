@@ -1,4 +1,6 @@
 # TODO DESCRIPTION AND COMMENTS
+from math import ceil
+
 from src.hw.bitstream import Bitstream
 from src.hw.cgra import Cgra
 from src.hw.cgra_accelerator import CgraAccelerator
@@ -44,15 +46,15 @@ class VerilogSimulator:
                     else:
                         line = to_hex(data_in.get(), 16) + line
                 data_to_write = data_to_write + line
-                file = correct_directory_path(
-                    search_a_path('verilog_simul/input_files',
-                                  paths)) + str(i) + ".txt"
-                input_files.append(file)
-                save_file(file, data_to_write, "w")
+            file = correct_directory_path(
+                search_a_path('verilog_simul/input_files',
+                              paths)) + str(i) + ".txt"
+            input_files.append(file)
+            save_file(file, data_to_write, "w")
         # create the HW verilog file
         cgra_acc_testbench_verilog = \
             create_testbench_sim(cgra_acc,
-                                 tam_input_data,
+                                 ceil(tam_input_data / 32),
                                  len(initial_conf.split("\n")),
                                  input_files).to_verilog()
         method = "w"

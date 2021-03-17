@@ -11,7 +11,6 @@ module testbench_sim
   reg start;
   wire [2-1:0] rd_done;
   wire [1-1:0] wr_done;
-  wire [1-1:0] consumer_done;
   wire [2-1:0] rd_request;
   wire [2-1:0] rd_valid;
   wire [INTERFACE_DATA_WIDTH*2-1:0] rd_data;
@@ -19,15 +18,13 @@ module testbench_sim
   wire [1-1:0] wr_request;
   wire [INTERFACE_DATA_WIDTH*1-1:0] wr_data;
   wire acc_done;
-  wire done;
-  assign done = acc_done & consumer_done[0] ;
 
   data_producer
   #(
     .file("/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/test1/verilog_simul/input_files/0.txt"),
     .data_width(INTERFACE_DATA_WIDTH),
-    .num_data(5),
-    .addr_width(3)
+    .num_data(6),
+    .addr_width(4)
   )
   data_producer_0
   (
@@ -44,8 +41,8 @@ module testbench_sim
   #(
     .file("/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/test1/verilog_simul/input_files/1.txt"),
     .data_width(INTERFACE_DATA_WIDTH),
-    .num_data(1),
-    .addr_width(3)
+    .num_data(2),
+    .addr_width(2)
   )
   data_producer_1
   (
@@ -61,12 +58,15 @@ module testbench_sim
   data_consumer
   #(
     .data_width(INTERFACE_DATA_WIDTH),
-    .id(0)
+    .id(0),
+    .num_data(2),
+    .counter_num_data_width(2)
   )
   data_consumer_0
   (
     .clk(clk),
     .rst(rst),
+    .wr_done(wr_done[0]),
     .wr_available(wr_available[0]),
     .wr_request(wr_request[0]),
     .wr_data(wr_data[1*INTERFACE_DATA_WIDTH-1:0*INTERFACE_DATA_WIDTH])
@@ -120,7 +120,7 @@ module testbench_sim
   always #5clk=~clk;
 
   always @(posedge clk) begin
-    if(done) begin
+    if(acc_done) begin
       $display("ACC DONE!");
       $finish;
     end 
@@ -273,24 +273,35 @@ endmodule
 module data_consumer #
 (
   parameter id = 0,
-  parameter data_width = 512
+  parameter data_width = 512,
+  parameter num_data = 16,
+  parameter counter_num_data_width = 4
 )
 (
   input clk,
   input rst,
   output reg wr_available,
   input wr_request,
-  input [data_width-1:0] wr_data
+  input [data_width-1:0] wr_data,
+  output reg wr_done
 );
 
+  reg [counter_num_data_width-1:0] counter;
 
   always @(posedge clk) begin
     if(rst) begin
+      counter <= 0;
+      wr_done <= 1'd0;
       wr_available <= 'd0;
     end else begin
       wr_available <= 'd1;
-      if(wr_request) begin
-        $display("%s:%h", id, wr_data);
+      if(wr_request & !wr_done) begin
+        $display("%d:%h", id, wr_data);
+        counter <= counter + 1;
+      end 
+      if(counter == num_data) begin
+        wr_done <= 1'd1;
+        wr_available <= 'd0;
       end 
     end
   end
@@ -298,6 +309,8 @@ module data_consumer #
 
   initial begin
     wr_available = 0;
+    wr_done = 0;
+    counter = 0;
   end
 
 

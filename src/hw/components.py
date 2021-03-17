@@ -1041,6 +1041,8 @@ class Components:
         m = Module(name)
         id = m.Parameter('id', 0)
         data_width = m.Parameter('data_width', 512)
+        num_data = m.Parameter('num_data', 16)
+        counter_num_data_width = m.Parameter('counter_num_data_width', 4)
 
         # Control signals for the component
         clk = m.Input('clk')
@@ -1050,15 +1052,25 @@ class Components:
         wr_available = m.OutputReg('wr_available')
         wr_request = m.Input('wr_request')
         wr_data = m.Input('wr_data', data_width)
+        wr_done = m.OutputReg('wr_done')
+
+        counter = m.Reg('counter', counter_num_data_width)
 
         m.Always(Posedge(clk))(
             If(rst)(
+                counter(0),
+                wr_done(Int(0, 1, 10)),
                 wr_available(Int(0, wr_available.width, 10)),
             ).Else(
                 wr_available(Int(1, wr_available.width, 10)),
-                If(wr_request)(
-                    Display("%s:%h", id, wr_data),
+                If(And(wr_request, Not(wr_done)))(
+                    Display("%d:%h", id, wr_data),
+                    counter(counter + 1),
                 ),
+                If(counter == num_data)(
+                    wr_done(Int(1, 1, 10)),
+                    wr_available(Int(0, wr_available.width, 10)),
+                )
             )
         )
 

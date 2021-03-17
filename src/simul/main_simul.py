@@ -1,5 +1,7 @@
 # Main simulator archive
 # TODO DESCRIPTION AND COMMENTS
+from math import ceil
+
 from src.simul.simul_dot.simulation.dot_simulator import DotSimulator
 from simul_verilog.simulation.verilog_simulator import VerilogSimulator
 from util.simul_util_functions import init_folders, search_for_files, correct_directory_path
@@ -40,7 +42,7 @@ class MainSimul:
 if __name__ == "__main__":
     test_path = "/home/jeronimo/Documentos/GIT/hpcgra/simul_tests/test1/"
     type_of_input_generation = 1
-    tam_input_data = 5
+    tam_input_data = 33
 
     simul = MainSimul(test_path, type_of_input_generation, tam_input_data)
     simul.start_both_simul()

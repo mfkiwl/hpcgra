@@ -85,7 +85,6 @@ def create_testbench_sim(cgraAcc, num_data: int, conf_lines, files):
 
     rd_done = m.Wire('rd_done', num_in)
     wr_done = m.Wire('wr_done', num_out)
-    consumer_done = m.Wire('consumer_done', num_out)
 
     rd_request = m.Wire('rd_request', num_in)
     rd_valid = m.Wire('rd_valid', num_in)
@@ -97,19 +96,12 @@ def create_testbench_sim(cgraAcc, num_data: int, conf_lines, files):
 
     acc_done = m.Wire('acc_done')
 
-    done = m.Wire('done')
-    content = "assign done = acc_done & "
-    for i in range(num_out):
-        content += "consumer_done["+str(i)+"] & "
-    content = content[0:len(content)-2]+";"
-
-    m.EmbeddedCode(content)
-
     for i in range(num_in):
         params = [('file', files[i]),
                   ('data_width', INTERFACE_DATA_WIDTH),
-                  ('num_data', num_data if i == 0 else num_data - conf_lines),
-                  ('addr_width', ceil(log2(num_data)))]
+                  ('num_data', num_data + conf_lines if i == 0 else num_data),
+                  ('addr_width', 1 + ceil(log2(num_data + conf_lines if i == 0
+                                               else num_data)))]
         con = [('clk', clk),
                ('rst', rst),
                ('rd_request', rd_request[i]),
@@ -122,9 +114,12 @@ def create_testbench_sim(cgraAcc, num_data: int, conf_lines, files):
 
     for i in range(num_out):
         params = [('data_width', INTERFACE_DATA_WIDTH),
-                  ('id', i)]
+                  ('id', i),
+                  ('num_data', num_data),
+                  ('counter_num_data_width', 1 + ceil(log2(num_data)))]
         con = [('clk', clk),
                ('rst', rst),
+               ('wr_done', wr_done[i]),
                ('wr_available', wr_available[i]),
                ('wr_request', wr_request[i]),
                ('wr_data', wr_data[Mul(i, INTERFACE_DATA_WIDTH):
@@ -162,7 +157,7 @@ def create_testbench_sim(cgraAcc, num_data: int, conf_lines, files):
     m.EmbeddedCode('always #5clk=~clk;')
 
     m.Always(Posedge(clk))(
-        If(done)(
+        If(acc_done)(
             Display('ACC DONE!'),
             Finish()
         )
