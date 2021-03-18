@@ -1064,7 +1064,7 @@ class Components:
             ).Else(
                 wr_available(Int(1, wr_available.width, 10)),
                 If(And(wr_request, Not(wr_done)))(
-                    Display("%d:%h", id, wr_data),
+                    Display("ID=%d:%h", id, wr_data),
                     counter(counter + 1),
                 ),
                 If(counter == num_data)(

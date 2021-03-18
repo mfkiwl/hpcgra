@@ -1,6 +1,8 @@
 # TODO DESCRIPTION AND COMMENTS
 from math import ceil
 
+from veriloggen.simulation import simulation
+
 from src.hw.bitstream import Bitstream
 from src.hw.cgra import Cgra
 from src.hw.cgra_accelerator import CgraAccelerator
@@ -52,16 +54,39 @@ class VerilogSimulator:
             input_files.append(file)
             save_file(file, data_to_write, "w")
         # create the HW verilog file
-        cgra_acc_testbench_verilog = \
+        cgra_acc_testbench = \
             create_testbench_sim(cgra_acc,
                                  ceil(tam_input_data / 32),
                                  len(initial_conf.split("\n")),
-                                 input_files).to_verilog()
+                                 input_files)
         method = "w"
         file = correct_directory_path(
             search_a_path("verilog_simul/verilog_src",
                           paths)) + "test_bench.v"
-        save_file(file, cgra_acc_testbench_verilog, method)
+        save_file(file, cgra_acc_testbench.to_verilog(), method)
+        sim = simulation.Simulator(cgra_acc_testbench, sim='iverilog')
+        rslt = sim.run()
+        lines = []
+        for line in rslt.splitlines():
+            if 'ID=' in line:
+                line = line.replace(" ", "")
+                line = line.replace('ID=', '')
+                line = line.split(':')
+                lines.append([line[0], line[1]])
+        for i in range(cgra_acc.num_out):
+            file = correct_directory_path(
+                search_a_path("verilog_simul/output_files", paths)) + \
+                   str(i) + ".txt"
+            content = ""
+            counter = 0
+            for line in lines:
+                if str(i) in line[0]:
+                    values = line[1]
+                    while len(values) > 0 and counter < tam_input_data:
+                        content += values[len(values) - 4:len(values)] + "\n"
+                        values = values[0:len(values) - 4]
+                        counter += 1
+            save_file(file, content,"w")
 
     def search_json_file(self):
         for file in self._files:

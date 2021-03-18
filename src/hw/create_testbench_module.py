@@ -158,7 +158,7 @@ def create_testbench_sim(cgraAcc, num_data: int, conf_lines, files):
 
     m.Always(Posedge(clk))(
         If(acc_done)(
-            Display('ACC DONE!'),
+            #Display('ACC DONE!'),
             Finish()
         )
     )

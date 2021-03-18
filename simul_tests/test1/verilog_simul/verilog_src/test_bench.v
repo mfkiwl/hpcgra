@@ -121,7 +121,6 @@ module testbench_sim
 
   always @(posedge clk) begin
     if(acc_done) begin
-      $display("ACC DONE!");
       $finish;
     end 
   end
@@ -296,7 +295,7 @@ module data_consumer #
     end else begin
       wr_available <= 'd1;
       if(wr_request & !wr_done) begin
-        $display("%d:%h", id, wr_data);
+        $display("ID=%d:%h", id, wr_data);
         counter <= counter + 1;
       end 
       if(counter == num_data) begin
