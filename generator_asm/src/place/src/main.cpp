@@ -43,12 +43,16 @@ int main(int argc, char** argv) {
         randomvec[i] = (double)rand() / (double)(RAND_MAX);
     }
     //Cria a estrutura do grafo com os vetores (A, v e v_i) à partir do grafo g
-    string path = "", name = "";
-    path = argv[1]; name = argv[2];
+    string path = "", name = ""; int k = 0;
+    path = argv[1]; 
+    name = argv[2];
+    k = atoi(argv[3]);
+    
     Graph g(path);
     int nodes = g.num_nodes();
     int edges = g.num_edges();
     int *h_edgeA, *h_edgeB;
+
     h_edgeA = new int[edges];
     h_edgeB = new int[edges];
     vector<pair<int,int>> edge_list = g.get_edges();
@@ -62,34 +66,36 @@ int main(int argc, char** argv) {
     others = new bool[nodes];
 
     //Matriz de booleanos para identificar ios e mults
-    for(int i=0; i<nodes; i++){
-        v[i]=0; v_i[i]=0;
+    for(int i=0; i < nodes; i++){
+        v[i]=0; 
+        v_i[i]=0;
         io[i] = false;
         mults[i] = true;
         others[i] = false;
     }
 
     //Preenche a estrutura do grafo
+    int n1, n2;
     for(int i=0; i < edge_list.size(); i++){
-        int n1 = edge_list[i].first;
-        int n2 = edge_list[i].second;
+        n1 = edge_list[i].first;
+        n2 = edge_list[i].second;
         h_edgeA[i] = n1;
         h_edgeB[i] = n2;
         v[n1]++;
-        if(n1!=n2) v[n2]++;
+        if(n1 != n2) v[n2]++;
     }
 
     for(int i=1; i < nodes; i++){
         v_i[i] = v_i[i-1] + v[i-1];
     }
 
-    for(int i=0; i<nodes; i++){
-        for(int j=0; j<edges; j++){
+    for(int i = 0; i < nodes; ++i){
+        for(int j = 0; j < edges; ++j){
             if (h_edgeA[j] != h_edgeB[j]) {
-                if(h_edgeA[j]==i) A.push_back(h_edgeB[j]);
-                if(h_edgeB[j]==i) A.push_back(h_edgeA[j]);
+                if(h_edgeA[j] == i) A.push_back(h_edgeB[j]);
+                if(h_edgeB[j] == i) A.push_back(h_edgeA[j]);
             } else {
-                if(h_edgeA[j]==i) A.push_back(h_edgeB[j]);
+                if(h_edgeA[j] == i) A.push_back(h_edgeB[j]);
             }
         }
     }
@@ -105,7 +111,7 @@ int main(int argc, char** argv) {
     
     //Marca quais nós são IO
     for(int i=0; i<nodes; i++){
-        if(g.get_predecessors(i).size()==0 || g.get_sucessors(i).size()==0) io[i] = true;
+        if(g.get_predecessors(i).size() == 0 || g.get_sucessors(i).size() == 0) io[i] = true;
     }
 
     dim = ceil(sqrt(nodes));

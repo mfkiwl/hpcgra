@@ -1,3 +1,0 @@
-# Third Source code
-
-jsoncpp
