@@ -12,12 +12,12 @@ file(GLOB_RECURSE H_SRCS ${CMAKE_SOURCE_DIR}/include/*.h)
 file(GLOB_RECURSE CXX_SRCS 
     ${CMAKE_SOURCE_DIR}/src/Graph.cpp
 )
-file(GLOB_RECURSE MAIN_SRCS ${CMAKE_SOURCE_DIR}/src/sa_openmp2HOMOG.cpp)
+file(GLOB_RECURSE MAIN_SRCS ${CMAKE_SOURCE_DIR}/src/main.cpp)
 
 add_library(Graph SHARED ${CXX_SRCS})
 
-add_executable(main ${MAIN_SRCS})
+add_executable(place ${MAIN_SRCS})
 
 target_link_libraries(Graph ${Boost_LIBRARIES})
 
-target_link_libraries(main Graph)
+target_link_libraries(place Graph)

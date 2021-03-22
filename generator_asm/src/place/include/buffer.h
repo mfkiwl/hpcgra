@@ -2,6 +2,7 @@
 #define __BUFFER_H
 
 #include <Graph.h>
+#include <instance.h>
 #include <get_critical_path.h>
 
 void dfsBuffer(Graph g, int *level, int *levelOrig, map<pair<int,int>,int> &buffers, map<pair<int,int>,int> &edges){
@@ -93,7 +94,7 @@ int manhattan_dist(int pos_a_i, int pos_a_j, int pos_b_i, int pos_b_j) {
     return (diff_i + diff_j);
 }
 
-int buffer(Graph g, vector<vector<int>> &activeFifos, map<pair<int,int>,int> &manh, vector<map<pair<int,int>,int>> &edges_cost, vector<map<pair<int,int>,int>> &buffers_per_PE, vector<bool> &successfulRoutings){
+int buffer(Graph g, vector<vector<int>> &activeFifos, map<pair<int,int>,int> &manh, vector<map<pair<int,int>,int>> &edges_cost, vector<map<pair<int,int>,int>> &buffers_per_PE, vector<bool> &successfulRoutings, vector<Instance> &instances){
     const int SAMPLES_SIZE = edges_cost.size();
     const int NODE_SIZE = g.get_nodes().size();
     const int EDGE_SIZE = g.get_edges().size();
@@ -149,17 +150,13 @@ int buffer(Graph g, vector<vector<int>> &activeFifos, map<pair<int,int>,int> &ma
             if(inp.count(aux.first) || inp.count(aux.second)) buffers[k][aux] = 0; //set buffers on inputs to 0
             if(edges_cost[k].count(aux)){
                 buffers_per_PE[k][aux] = ceil(float(buffers[k][aux])/(edges_cost[k][aux]+1));
+                instances[k].setPES(aux.second,buffers[k][aux]);
             }
             else if (edges_cost[k].count(aux2)){
-                buffers_per_PE[k][aux] = ceil(float(buffers[k][aux])/(edges_cost[k][aux2]+1));                
+                buffers_per_PE[k][aux] = ceil(float(buffers[k][aux])/(edges_cost[k][aux2]+1));
+                instances[k].setPES(aux2.second,buffers[k][aux]);                
             }
-            if(buffers_per_PE[k][aux] != 0){
-                int nFifosOnEdge = buffers_per_PE[k][aux];
-                //if(nFifosOnEdge<=minNumberFifos) minNumberFifos=nFifosOnEdge;
-
-                activeFifos[k][nFifosOnEdge] += manh[aux]+1;
-                //cout << activeFifos[k] << endl;
-            } 
+            instances[k].insertBufferedEdge(aux,buffers_per_PE[k][aux],manh[aux]+1);
         }
     }
     //return buffers;
