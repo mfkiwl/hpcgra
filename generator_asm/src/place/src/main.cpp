@@ -16,6 +16,7 @@
 #include <map>
 #include <annealing.h>
 #include <instance.h>
+#include <read_arch.h>
 
 #define NGRIDS 1000
 
@@ -43,12 +44,24 @@ int main(int argc, char** argv) {
         randomvec[i] = (double)rand() / (double)(RAND_MAX);
     }
     //Cria a estrutura do grafo com os vetores (A, v e v_i) à partir do grafo g
-    string path = "", name = ""; int k = 0;
-    path = argv[1]; 
-    name = argv[2];
-    k = atoi(argv[3]);
+    string path_dot = "", name = "", path_arch= "";
+
+    if (argc > 2) {
+        name = argv[1];
+        path_dot = argv[2]; 
+        path_arch = argv[3];
+    } else {
+        printf("ERROR: ./place <name> <path_to_dot.dot> <path_to_arch.json>\n");
+        printf("./place mac ../dot/mac.dot ../arch/cgra_4x4.json \n");
+        return 1;
+    }
+
+    if (!read_arch(path_arch)){ 
+        printf("ERROR: Read the arch json file\n");
+        return 1;
+    }
     
-    Graph g(path);
+    Graph g(path_dot);
     int nodes = g.num_nodes();
     int edges = g.num_edges();
     int *h_edgeA, *h_edgeB;
