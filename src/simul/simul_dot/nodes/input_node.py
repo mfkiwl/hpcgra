@@ -1,10 +1,9 @@
 # Class for the Input node. This node creates a series of data to the be
 # process in the dataflow.
 # Jeronimo Costa Penha 2021/03/10
-from random import randint
 
 from src.simul.simul_dot.nodes.node import Node
-from src.simul.util.simul_util_functions import correct_directory_path, save_file, generate_input_sequence
+from src.simul.util.simul_util_functions import generate_input_sequence
 
 
 # TODO DESCRIPTION AND COMMENTS

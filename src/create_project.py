@@ -1,5 +1,11 @@
 import argparse
+import os
+import sys
 import traceback
+
+p = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if not p in sys.path:
+    sys.path.insert(0, p)
 
 from veriloggen import *
 
@@ -37,14 +43,31 @@ def main():
         args.json = running_path + '/' + args.json
         cgra = Cgra(args.json)
         cgraacc = CgraAccelerator(cgra)
-        acc_axi = AccAXIInterface(cgraacc).create_kernel_top()
+        acc_axi = AccAXIInterface(cgraacc)
+
         commands_getoutput('cp -r %s/resources/template.prj %s/%s' % (hpcgra_root, args.output, args.name))
-        acc_axi.to_verilog('%s/%s/xilinx_aws_f1/hw/src/kernel_top.v' % (args.output, args.name))
+
+        acc_axi.create_kernel_top(args.name).to_verilog(
+            '%s/%s/xilinx_aws_f1/hw/src/%s.v' % (args.output, args.name, args.name))
+
         write_file('%s/%s/xilinx_aws_f1/hw/simulate/num_m_axis.mk' % (args.output, args.name),
                    'NUM_M_AXIS=%d' % cgraacc.get_num_in())
+
         write_file('%s/%s/xilinx_aws_f1/hw/synthesis/num_m_axis.mk' % (args.output, args.name),
                    'NUM_M_AXIS=%d' % cgraacc.get_num_in())
-        write_file('%s/%s/xilinx_aws_f1/hw/synthesis/prj_name' % (args.output, args.name),args.name)
+
+        write_file('%s/%s/xilinx_aws_f1/sw/host/prj_name' % (args.output, args.name), args.name)
+
+        write_file('%s/%s/xilinx_aws_f1/hw/simulate/prj_name' % (args.output, args.name), args.name)
+
+        write_file('%s/%s/xilinx_aws_f1/hw/synthesis/prj_name' % (args.output, args.name), args.name)
+
+        write_file('%s/%s/xilinx_aws_f1/hw/simulate/vitis_config.txt' % (args.output, args.name),
+                   acc_axi.get_connectivity_config(args.name))
+
+        write_file('%s/%s/xilinx_aws_f1/hw/synthesis/vitis_config.txt' % (args.output, args.name),
+                   acc_axi.get_connectivity_config(args.name))
+
         commands_getoutput(
             'rm -rf %s/src/parser.out %s/src/parsetab.py %s/src/__pycache__' % (hpcgra_root, hpcgra_root, hpcgra_root))
 

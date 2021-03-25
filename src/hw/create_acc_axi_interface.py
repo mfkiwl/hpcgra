@@ -8,6 +8,18 @@ class AccAXIInterface:
         self.acc = accelerator
         self.cache = {}
 
+    def get_connectivity_config(self, name):
+        num_m_axis = self.acc.get_num_in()
+        num_ddr = min(num_m_axis, 4)
+        sp = '[connectivity]\n'
+        ddr = [i % num_ddr for i in range(num_m_axis)]
+        ddr.sort()
+        for axi in range(num_m_axis):
+            sp += 'sp=%s_1.in%d:DDR[%d]\n' % (name, axi, ddr[axi])
+            sp += 'sp=%s_1.out%d:DDR[%d]\n' % (name, axi, ddr[axi])
+
+        return sp
+
     def create_app_top(self):
         num_m_axis = self.acc.get_num_in()
 
@@ -155,12 +167,6 @@ class AccAXIInterface:
                 )
             )
         )
-
-        # m.Always(Posedge(ap_clk))(
-        #     ap_start_r(ap_start)
-        # )
-        # ap_start_pulse.assign(ap_start & ~ap_start_r)
-
         m.Always(Posedge(ap_clk))(
             If(areset)(
                 ap_idle_r(Int(1, 1, 2))
@@ -277,7 +283,7 @@ class AccAXIInterface:
             ]
             m.Instance(axi_writer, 'axi_writer_%d' % i, param, con)
 
-        param = [('INTERFACE_DATA_WIDTH', C_M_AXI_DATA_WIDTH)]
+        param = []
         con = [
             ('clk', ap_clk),
             ('rst', areset),
@@ -293,7 +299,7 @@ class AccAXIInterface:
             ('acc_user_done', acc_user_done)
         ]
 
-        m.Instance(self.acc.get(), 'cgra_acc', param, con)
+        m.Instance(self.acc.get(), 'acc', param, con)
 
         initialize_regs(m, {'ap_idle_r': Int(1, 1, 2), 'areset': Int(1, 1, 2), 'reset': Int(1, 1, 2),
                             'fsm_reset': FSM_STATE_START})
@@ -301,10 +307,9 @@ class AccAXIInterface:
 
         return m
 
-    def create_kernel_top(self):
+    def create_kernel_top(self, name):
         num_m_axis = self.acc.get_num_in()
 
-        name = 'kernel_top'
         if name in self.cache.keys():
             return self.cache[name]
 

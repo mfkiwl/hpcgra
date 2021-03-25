@@ -1,3 +1,5 @@
+from math import ceil
+
 from src.hw.cgra import Cgra
 from src.hw.cgra_assembler import CgraAssembler
 from src.hw.utils import to_hex
@@ -10,8 +12,7 @@ class Bitstream:
         self.mask_output = 0
         self.cgra = Cgra(cgra_json)
         self.assembler = CgraAssembler(self.cgra, assembly)
-        src = self.assembler.compile().split('\n')
-
+        cgra_bitstream = self.assembler.compile().split('\n')
         sorted(self.cgra.input_ids)
         for i in range(len(self.cgra.input_ids)):
             if self.cgra.input_ids[i] in self.assembler.used_inputs:
@@ -22,7 +23,14 @@ class Bitstream:
             if self.cgra.output_ids[i] in self.assembler.used_outputs:
                 self.mask_output |= 1 << i
 
-        size = to_hex(len(src), 32)
+        cgra_bitstream_hex = []
+        size = 0
+        for cb in cgra_bitstream:
+            align = int(ceil(len(cb) / self.cgra.conf_bus_width)) * self.cgra.conf_bus_width
+            cgra_bitstream_hex.append(to_hex(int(cb, 2), align))
+            size += align // self.cgra.conf_bus_width
+
+        size = to_hex(size, 32)
         mask_input = to_hex(self.mask_input, 64)
         mask_output = to_hex(self.mask_output, 64)
 
@@ -41,11 +49,11 @@ class Bitstream:
         self.initial_conf += "".join(reversed(ignore_conf))
         self.initial_conf += '\n'
         self.initial_conf += "".join(reversed(ignore_loop_conf))
+
         conf_size = self.align_bits // self.cgra.conf_bus_width
-        src = [to_hex(int(c, 2), self.cgra.conf_bus_width) for c in src]
         count = 0
         conf = []
-        for c in src:
+        for c in cgra_bitstream_hex:
             conf.append(c)
             count += 1
             if count == conf_size:
@@ -53,7 +61,8 @@ class Bitstream:
                 conf.clear()
                 count = 0
 
-        self.initial_conf += '\n' + to_hex(int("".join(reversed(conf)), 16), 512)
+        if len(conf):
+            self.initial_conf += '\n' + to_hex(int("".join(reversed(conf)), 16), 512)
 
     def get(self):
         return self.initial_conf

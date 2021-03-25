@@ -33,7 +33,7 @@ THIS SOFTWARE,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 **********/
 
-#include "xcl2.hpp"
+#include <xcl2/xcl2.hpp>
 #include <climits>
 #include <sys/stat.h>
 #if defined(_WINDOWS)

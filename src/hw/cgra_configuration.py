@@ -5,6 +5,15 @@ from veriloggen import Complement2
 from src.hw.utils import bits
 
 
+class ConfTag:
+    bits = 3
+    reset = '000'
+    alu = '001'
+    const = '010'
+    router = '011'
+    acc_reset = '100'
+
+
 class CgraConfiguration:
 
     def __init__(self, cgra):
@@ -15,10 +24,11 @@ class CgraConfiguration:
             return False, 'CGRA does not contain the PE %d.' % id
 
         pe_conf_bits = self.cgra.pe_conf_width[self.cgra.array_pe[id].name]
-        conf_bits = self.cgra.pe_id_width + max(self.cgra.data_width, pe_conf_bits)
+        conf_bits = ConfTag.bits + self.cgra.pe_id_width + max(self.cgra.data_width, pe_conf_bits)
         id_bits = format(int(bin(id + 1)[2:], 2), '0%db' % self.cgra.pe_id_width)
-        raw_conf = format(int('000' + id_bits, 2), '0%db' % conf_bits)
-        return True, self.raw_conf_to_packages(raw_conf, '0', '1')
+        raw_conf = format(int(ConfTag.reset + id_bits, 2), '0%db' % conf_bits)
+        #return True, self.raw_conf_to_packages(raw_conf, '0', '1')
+        return True, [raw_conf]
 
     def create_alu_conf(self, id, op, alu_src, alu_delay):
         if id not in self.cgra.array_pe_arch.keys():
@@ -34,7 +44,7 @@ class CgraConfiguration:
         neighbors.sort()
         alu_num_inputs = self.cgra.get_max_operands(isa)
         pe_conf_bits = self.cgra.pe_conf_width[self.cgra.array_pe[id].name]
-        conf_bits = self.cgra.pe_id_width + max(self.cgra.data_width, pe_conf_bits) + 1
+        conf_bits = ConfTag.bits + self.cgra.pe_id_width + max(self.cgra.data_width, pe_conf_bits)
         id_bits = format(id + 1, '0%db' % self.cgra.pe_id_width)
 
         if op is not None:
@@ -46,9 +56,10 @@ class CgraConfiguration:
 
         if len(alu_delay) > alu_num_inputs:
             return False, 'The elastic_queue parameter must be less than or equal to the number of ALU inputs.'
-        for _, eq in alu_delay:
-            if elastic_queue < eq:
-                return False, 'The maximum latency of elastic queue in the PE %s is %d.' % (id, elastic_queue)
+        
+        for i, eq in alu_delay:
+            if elastic_queue[i] < eq:
+                return False, 'The maximum latency of elastic queue in the PE %s is %d.' % (id, elastic_queue[i])
 
         opcode = isa.index(op)
         op_width = bits(len(isa))
@@ -89,32 +100,40 @@ class CgraConfiguration:
         sel_alu = ''.join(sel_alu)
 
         elastic_queue_latency = ''
-        elastic_queue_latency_bits = bits(elastic_queue + 1)
-        if elastic_queue > 0:
+        elastic_queue_latency_bits = bits(max(elastic_queue) + 1)
+        if any(elastic_queue):
             elastic_queue_latency = [format(0, '0%db' % elastic_queue_latency_bits) for _ in
                                      range(alu_num_inputs)]
             if alu_delay is not None:
                 for i, v in alu_delay:
                     elastic_queue_latency[i] = format(v, '0%db' % elastic_queue_latency_bits)
 
-            elastic_queue_latency.reverse()
-            elastic_queue_latency = ''.join(elastic_queue_latency)
+        cp_elastic_queue_latency = []
+        for i in range(alu_num_inputs):
+            if elastic_queue[i] > 0:
+                cp_elastic_queue_latency.append(elastic_queue_latency[i])
 
-        raw_conf = format(int(elastic_queue_latency + sel_alu + opcode_bits + '001' + id_bits, 2), '0%db' % conf_bits)
-        return True, self.raw_conf_to_packages(raw_conf, '0', '1')
+        cp_elastic_queue_latency.reverse()
+        cp_elastic_queue_latency = ''.join(cp_elastic_queue_latency)
+
+        raw_conf = format(int(cp_elastic_queue_latency + sel_alu + opcode_bits + ConfTag.alu + id_bits, 2),
+                          '0%db' % conf_bits)
+        #return True, self.raw_conf_to_packages(raw_conf, '0', '1')
+        return True, [raw_conf]
 
     def create_const_conf(self, id, const):
         if id not in self.cgra.array_pe_arch.keys():
             return False, 'CGRA does not contain the PE %d.' % id
 
         pe_conf_bits = self.cgra.pe_conf_width[self.cgra.array_pe[id].name]
-        conf_bits = self.cgra.pe_id_width + max(self.cgra.data_width, pe_conf_bits)
+        conf_bits = ConfTag.bits + self.cgra.pe_id_width + max(self.cgra.data_width, pe_conf_bits)
         id_bits = format(id + 1, '0%db' % self.cgra.pe_id_width)
         if const < 0:
             const = Complement2(const)
         const = format(const, '0%db' % self.cgra.data_width)
-        raw_conf = format(int(const + '010' + id_bits, 2), '0%db' % conf_bits)
-        return True, self.raw_conf_to_packages(raw_conf, '0', '1')
+        raw_conf = format(int(const + ConfTag.const + id_bits, 2), '0%db' % conf_bits)
+        #return True, self.raw_conf_to_packages(raw_conf, '0', '1')
+        return True, [raw_conf]
 
     def create_router_conf(self, id, routing):
         if id not in self.cgra.array_pe_arch.keys():
@@ -128,7 +147,7 @@ class CgraConfiguration:
         isa.sort()
         neighbors.sort()
         pe_conf_bits = self.cgra.pe_conf_width[self.cgra.array_pe[id].name]
-        conf_bits = self.cgra.pe_id_width + max(self.cgra.data_width, pe_conf_bits) + 1
+        conf_bits = ConfTag.bits + self.cgra.pe_id_width + max(self.cgra.data_width, pe_conf_bits)
 
         routes_needed = 0
         for i, o in routing.items():
@@ -213,41 +232,44 @@ class CgraConfiguration:
                         route_sel_in = "".join(route_sel_in_v)
                         route_sel_out = "".join(route_sel_in_v)
 
-        raw_conf = format(int(route_sel_out + route_sel_in + '011' + id_bits, 2), '0%db' % conf_bits)
-        return True, self.raw_conf_to_packages(raw_conf, '0', '1')
+        raw_conf = format(int(route_sel_out + route_sel_in + ConfTag.router + id_bits, 2), '0%db' % conf_bits)
+        #return True, self.raw_conf_to_packages(raw_conf, '0', '1')
+        return True, [raw_conf]
 
     def create_acc_reset_conf(self, id, val):
         if id not in self.cgra.array_pe_arch.keys():
             return False, 'CGRA does not contain the PE %d.' % id
 
         pe_conf_bits = self.cgra.pe_conf_width[self.cgra.array_pe[id].name]
-        conf_bits = self.cgra.pe_id_width + max(self.cgra.data_width, pe_conf_bits)
+        conf_bits = ConfTag.bits + self.cgra.pe_id_width + max(self.cgra.data_width, pe_conf_bits)
         id_bits = format(id + 1, '0%db' % self.cgra.pe_id_width)
         val = format(val, '0%db' % self.cgra.data_width)
-        raw_conf = format(int(val + '100' + id_bits, 2), '0%db' % conf_bits)
-        return True, self.raw_conf_to_packages(raw_conf, '0', '1')
+        raw_conf = format(int(val + ConfTag.acc_reset + id_bits, 2), '0%db' % conf_bits)
 
-    def raw_conf_to_packages(self, raw_conf, start_packet, end_packet):
-        packet = []
-        size_packet = self.cgra.conf_bus_width - 1
-        num_packets = int(ceil(len(raw_conf) / size_packet))
-        raw_conf = raw_conf[::-1]
+        return True, [raw_conf]
+        #return True, self.raw_conf_to_packages(raw_conf, '0', '1')
 
-        for i in range(num_packets):
-            data = raw_conf[i * size_packet:(i + 1) * size_packet]
-            if i > 0:
-                data = data[::-1] + start_packet
-            else:
-                data = data[::-1] + end_packet
-
-            data = (self.cgra.conf_bus_width - len(data)) * '0' + data
-            packet.append(data)
-
-        for i in range(len(packet) - 1, -1, -1):
-            if int(packet[i]) == 0:
-                packet = packet[:-1]
-            else:
-                break
-
-        packet.reverse()
-        return packet
+    # def raw_conf_to_packages(self, raw_conf, start_packet, end_packet):
+    #     packet = []
+    #     size_packet = self.cgra.conf_bus_width - 1
+    #     num_packets = int(ceil(len(raw_conf) / size_packet))
+    #     raw_conf = raw_conf[::-1]
+    #
+    #     for i in range(num_packets):
+    #         data = raw_conf[i * size_packet:(i + 1) * size_packet]
+    #         if i > 0:
+    #             data = data[::-1] + start_packet
+    #         else:
+    #             data = data[::-1] + end_packet
+    #
+    #         data = (self.cgra.conf_bus_width - len(data)) * '0' + data
+    #         packet.append(data)
+    #
+    #     for i in range(len(packet) - 1, -1, -1):
+    #         if int(packet[i]) == 0:
+    #             packet = packet[:-1]
+    #         else:
+    #             break
+    #
+    #     packet.reverse()
+    #     return packet

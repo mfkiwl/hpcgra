@@ -3,22 +3,27 @@ TARGET := hw_emu
 DEVICE := $(AWS_PLATFORM)
 HOST_ARCH = x86
 
-CXXFLAGS += $(opencl_CXXFLAGS) -Wall -O0 -g -std=c++11
+LIB_READY=$(shell readlink -f ../lib/lib/)
+
+CXXFLAGS += $(opencl_CXXFLAGS) -Wall -O3 -g -std=c++11
 LDFLAGS += $(opencl_LDFLAGS)
 
-CXXFLAGS += -I$(shell readlink -f ./include) -I$(shell readlink -f ./include/xcl2)
-LDFLAGS += -lrt -lstdc++ 
+CXXFLAGS += -I$(shell readlink -f ./include) -I$(shell readlink -f ../lib/include/)
+LDFLAGS += -L$(LIB_READY) -lrt -lstdc++ -lhpcgra 
 
 CXXFLAGS += -fmessage-length=0
 
 HOST_SRCS =$(shell find ./src/ -iname *.cpp)
-HOST_HDRS =$(shell find ./include/ -iname *.cpp)
 
 EMCONFIG_DIR=./emconfig_dir
-EXECUTABLE =./kernel_top
+EXECUTABLE=./$(shell cat prj_name).exe
 
-SIM_XCLBIN=$(shell find ../hw/simulate -iname kernel_top.xclbin)
-HW_XCLBIN=$(shell find ../hw/synthesis -iname kernel_top.awsxclbin)
+xclbin_name = $(shell cat prj_name).xclbin
+awsxclbin_name = $(shell cat prj_name).awsxclbin
+
+
+SIM_XCLBIN=$(shell find ../../hw/simulate -iname $(xclbin_name))
+HW_XCLBIN=$(shell find ../../hw/synthesis -iname $(awsxclbin_name))
 
 .PHONY:first
 first:host
@@ -30,16 +35,17 @@ include checks.mk
 .PHONY: host
 host: $(EXECUTABLE)
 
-$(EXECUTABLE): check-xrt $(HOST_SRCS) $(HOST_HDRS)
-	$(CXX) $(CXXFLAGS) $(HOST_SRCS) $(HOST_HDRS) -o '$@' $(LDFLAGS)
+$(EXECUTABLE): check-xrt $(HOST_SRCS) 
+	$(CXX) $(CXXFLAGS) $(HOST_SRCS) -o '$@' $(LDFLAGS)
+	
 
 .PHONY: sim	
 sim: host simconf emconfig
-	XCL_EMULATION_MODE=$(TARGET) $(EXECUTABLE) $(SIM_XCLBIN) $(CGRA_BITSTREAM)
+	XCL_EMULATION_MODE=$(TARGET) LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):$(LIB_READY) $(EXECUTABLE) $(SIM_XCLBIN) $(shell cat prj_name) $(CGRA_BITSTREAM)
 
 .PHONY: run
 run: host
-	$(EXECUTABLE) $(HW_XCLBIN) $(CGRA_BITSTREAM)
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):$(LIB_READY) $(EXECUTABLE) $(HW_XCLBIN) $(shell cat prj_name) $(CGRA_BITSTREAM)
 
 .PHONY: wave 
 wave: sim

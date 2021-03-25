@@ -3,12 +3,11 @@ from math import ceil
 
 from veriloggen.simulation import simulation
 
-from src.hw.bitstream import Bitstream
+from create_testbench_module import create_testbench_sim
 from src.hw.cgra import Cgra
 from src.hw.cgra_accelerator import CgraAccelerator
-from src.hw.create_testbench_module import create_testbench_sim
+from src.hw.cgra_bitstream import Bitstream
 from src.hw.utils import to_hex
-from src.simul.util.queue import Queue
 from src.simul.util.simul_util_functions import correct_directory_path, \
     search_a_path, save_file, generate_input_sequence
 
@@ -86,7 +85,7 @@ class VerilogSimulator:
                         content += values[len(values) - 4:len(values)] + "\n"
                         values = values[0:len(values) - 4]
                         counter += 1
-            save_file(file, content,"w")
+            save_file(file, content, "w")
 
     def search_json_file(self):
         for file in self._files:

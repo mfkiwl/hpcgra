@@ -2,8 +2,9 @@
 
 import os
 import shutil
-from src.simul.util.queue import Queue
 from random import randint
+
+from src.simul.util.queue import Queue
 
 
 def init_folders(paths):

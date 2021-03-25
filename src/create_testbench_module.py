@@ -1,6 +1,6 @@
-from veriloggen import *
-
 from math import ceil, log2
+
+from veriloggen import *
 
 from src.hw.components import Components
 from src.hw.utils import initialize_regs
@@ -158,7 +158,7 @@ def create_testbench_sim(cgraAcc, num_data: int, conf_lines, files):
 
     m.Always(Posedge(clk))(
         If(acc_done)(
-            #Display('ACC DONE!'),
+            # Display('ACC DONE!'),
             Finish()
         )
     )

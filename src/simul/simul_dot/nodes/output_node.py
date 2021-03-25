@@ -5,9 +5,9 @@
 # TODO DESCRIPTION AND COMMENTS
 # TODO TO_STRING
 from src.hw.utils import to_hex
-from src.simul.util.simul_util_functions import save_file
-from src.simul.util.queue import Queue
 from src.simul.simul_dot.nodes.node import Node
+from src.simul.util.queue import Queue
+from src.simul.util.simul_util_functions import save_file
 
 
 class OutputNode(Node):

@@ -1,10 +1,10 @@
 # Main simulator archive
 # TODO DESCRIPTION AND COMMENTS
-from math import ceil
 
-from src.simul.simul_dot.simulation.dot_simulator import DotSimulator
 from simul_verilog.simulation.verilog_simulator import VerilogSimulator
 from util.simul_util_functions import init_folders, search_for_files, correct_directory_path
+
+from src.simul.simul_dot.simulation.dot_simulator import DotSimulator
 
 
 class MainSimul:

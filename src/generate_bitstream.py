@@ -1,7 +1,13 @@
 import argparse
 import os
+import sys
+import traceback
 
-from src.hw.bitstream import Bitstream
+p = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if not p in sys.path:
+    sys.path.insert(0, p)
+
+from src.hw.cgra_bitstream import Bitstream
 
 
 def create_args():
@@ -32,4 +38,7 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as e:
-        print(e)
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        print('Exception in:', exc_type, fname, exc_tb.tb_lineno)
+        traceback.print_exc()

@@ -1,4 +1,4 @@
-from math import ceil
+from math import ceil, log
 
 from veriloggen import *
 from veriloggen.types.util import *
@@ -351,7 +351,7 @@ class Components:
         self.cache[name] = m
         return m
 
-    def create_control_conf(self, cgra_id, num_pe_io_in, num_pe_io_out, num_cicle_wait_conf_finish):
+    def create_control_conf(self, cgra_id, cgra_conf_width, num_pe_io_in, num_pe_io_out, num_cicle_wait_conf_finish):
         name = 'cgra%d_control_conf' % cgra_id
         if name in self.cache.keys():
             return self.cache[name]
@@ -359,9 +359,8 @@ class Components:
         m = Module(name)
 
         CONF_DATA_IN_WIDTH = m.Parameter('CONF_DATA_IN_WIDTH', 512)
-        CONF_DATA_OUT_WIDTH = m.Parameter('CONF_DATA_OUT_WIDTH', 8)
 
-        CONF_SIZE = m.Localparam('CONF_SIZE', Div(CONF_DATA_IN_WIDTH, CONF_DATA_OUT_WIDTH))
+        CONF_SIZE = m.Localparam('CONF_SIZE', Div(CONF_DATA_IN_WIDTH, cgra_conf_width))
 
         clk = m.Input('clk')
         rst = m.Input('rst')
@@ -371,7 +370,7 @@ class Components:
         rd_data = m.Input('rd_data', CONF_DATA_IN_WIDTH)
         rd_data_valid = m.Input('rd_data_valid')
 
-        conf_out_bus = m.OutputReg('conf_out_bus', CONF_DATA_OUT_WIDTH)
+        conf_out_bus = m.OutputReg('conf_out_bus', cgra_conf_width + 1)
 
         read_fifo_mask = m.OutputReg('read_fifo_mask', num_pe_io_in)
         write_fifo_mask = m.OutputReg('write_fifo_mask', num_pe_io_out)
@@ -390,12 +389,12 @@ class Components:
         FSM_INIT_CONF_DONE = m.Localparam('FSM_INIT_CONF_DONE', 7)
 
         m.EmbeddedCode('')
-        fsm_conf_ctrl = m.Reg('fsm_conf_ctrl', 4)
-        fsm_conf_ctrl_next = m.Reg('fsm_conf_ctrl_next', 4)
+        fsm_conf_ctrl = m.Reg('fsm_conf_ctrl', 3)
+        fsm_conf_ctrl_next = m.Reg('fsm_conf_ctrl_next', 3)
         conf_req_data = m.Reg('conf_req_data')
         conf_cl = m.Reg('conf_cl', CONF_DATA_IN_WIDTH)
         qtd_conf = m.Reg('qtd_conf', 32)
-        conf_data = m.Reg('conf_data', CONF_DATA_OUT_WIDTH)
+        conf_data = m.Reg('conf_data', cgra_conf_width)
         send_conf = m.Reg('send_conf')
         conf_counter = m.Reg('conf_counter', 32)
         conf_counter_cl = m.Reg('conf_counter_cl', 10)
@@ -449,8 +448,8 @@ class Components:
                             fsm_conf_ctrl(FSM_WAIT_ALL_CONF_FINISH)
                         ).Else(
                             If(conf_counter_cl < CONF_SIZE)(
-                                conf_data(conf_cl[0:CONF_DATA_OUT_WIDTH]),
-                                conf_cl(conf_cl[CONF_DATA_OUT_WIDTH:]),
+                                conf_data(conf_cl[0:cgra_conf_width]),
+                                conf_cl(conf_cl[cgra_conf_width:]),
                                 send_conf(1),
                                 conf_counter.inc(),
                                 conf_counter_cl.inc(),
@@ -488,11 +487,7 @@ class Components:
             If(rst)(
                 conf_out_bus(0),
             ).Else(
-                If(send_conf)(
-                    conf_out_bus(conf_data),
-                ).Else(
-                    conf_out_bus(0)
-                ),
+                conf_out_bus(Cat(conf_data, send_conf))
             )
         )
 
@@ -681,8 +676,8 @@ class Components:
 
         NUM = m.Localparam('NUM', INPUT_DATA_WIDTH / OUTPUT_DATA_WIDTH)
 
-        fsm_read = m.Reg('fsm_read', 2)
-        fsm_control = m.Reg('fsm_control', 2)
+        fsm_read = m.Reg('fsm_read', 1)
+        fsm_control = m.Reg('fsm_control', 1)
         data = m.Reg('data', INPUT_DATA_WIDTH)
         buffer = m.Reg('buffer', INPUT_DATA_WIDTH)
         count = m.Reg('count', NUM)
@@ -834,8 +829,10 @@ class Components:
                 Case(fsm_control)(
                     When(0)(
                         If(push_data)(
-                            buffer1(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
-                                       buffer1 >> INPUT_DATA_WIDTH)),
+                            # buffer1(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
+                            # buffer1 >> INPUT_DATA_WIDTH)),
+                            # count1(count1 << 1)
+                            buffer1(Cat(data_in, buffer1[INPUT_DATA_WIDTH:])),
                             count1(count1 << 1)
                         ),
                         If(count1[NUM - 1] & push_data)(
@@ -855,9 +852,13 @@ class Components:
                             fsm_control(3)
                         ),
                         If(push_data)(
-                            buffer2(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
-                                       buffer2 >> INPUT_DATA_WIDTH)),
+                            # buffer2(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
+                            # buffer2 >> INPUT_DATA_WIDTH)),
+                            # count2(count2 << 1)
+
+                            buffer2(Cat(data_in, buffer2[INPUT_DATA_WIDTH:])),
                             count2(count2 << 1)
+
                         ),
                         If(count2[NUM - 2] & push_data & ~available_write)(
                             available_push(0)
@@ -865,9 +866,13 @@ class Components:
                     ),
                     When(2)(
                         If(push_data)(
-                            buffer2(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
-                                       buffer2 >> INPUT_DATA_WIDTH)),
+                            # buffer2(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
+                            # buffer2 >> INPUT_DATA_WIDTH)),
+                            # count2(count2 << 1)
+
+                            buffer2(Cat(data_in, buffer2[INPUT_DATA_WIDTH:])),
                             count2(count2 << 1)
+
                         ),
                         If(count2[NUM - 1] & push_data)(
                             fsm_control(3)
@@ -886,9 +891,12 @@ class Components:
                             fsm_control(1)
                         ),
                         If(push_data)(
-                            buffer1(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
-                                       buffer1 >> INPUT_DATA_WIDTH)),
+                            # buffer1(Or(Cat(data_in, Repeat(Int(0, 1, 2), OUTPUT_DATA_WIDTH - INPUT_DATA_WIDTH)),
+                            # buffer1 >> INPUT_DATA_WIDTH)),
+                            # count1(count1 << 1)
+                            buffer1(Cat(data_in, buffer1[INPUT_DATA_WIDTH:])),
                             count1(count1 << 1)
+
                         ),
                         If(count1[NUM - 2] & push_data & ~available_write)(
                             available_push(0)

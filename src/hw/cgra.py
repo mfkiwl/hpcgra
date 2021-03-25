@@ -1,4 +1,5 @@
 import json
+from math import ceil
 
 from veriloggen import *
 
@@ -50,23 +51,23 @@ class Cgra:
             self.input_ids.clear()
             self.output_ids.clear()
             for pe in self.arch['pe']:
-                self.array_pe[pe['id']] = self.__make_pe(pe)
+                self.array_pe[pe['id']] = self.__create_pe(pe)
                 self.array_pe_arch[pe['id']] = pe
                 if pe['type'] == 'input' or pe['type'] == 'inout':
                     self.input_ids.append(pe['id'])
                 if pe['type'] == 'output' or pe['type'] == 'inout':
                     self.output_ids.append(pe['id'])
 
-            self.__module = self.__make_cgra()
+            self.__module = self.__create_cgra()
         return self.__module
 
-    def __make_cgra(self):
+    def __create_cgra(self):
         wires = {}
         array_pe_stream = {}
         m = Module('cgra')
         clk = m.Input('clk')
         en = m.Input('en')
-        conf_bus = m.Input('conf_bus', self.conf_bus_width)
+        conf_bus = m.Input('conf_bus', self.conf_bus_width+1)
         for pe in self.arch['pe']:
             if pe['type'] == 'input' or pe['type'] == 'inout':
                 array_pe_stream[pe['id']] = m.Input('in_stream%s' % pe['id'], self.data_width)
@@ -78,12 +79,12 @@ class Cgra:
                 n = 'pe%d_to_pe%d' % (pe['id'], w)
                 wires[n] = m.Wire(n, self.data_width)
 
-        wires['conf_bus_reg_in'] = m.Wire('conf_bus_reg_in', self.conf_bus_width, len(self.array_pe))
-        wires['conf_bus_reg_out'] = m.Wire('conf_bus_reg_out', self.conf_bus_width, len(self.array_pe))
+        wires['conf_bus_reg_in'] = m.Wire('conf_bus_reg_in', self.conf_bus_width+1, len(self.array_pe))
+        wires['conf_bus_reg_out'] = m.Wire('conf_bus_reg_out', self.conf_bus_width+1, len(self.array_pe))
         reg_pipe_conf_bus = self.components.create_register_pipeline()
 
         for pe in self.array_pe:
-            param = [('num_register', 1), ('width', self.conf_bus_width)]
+            param = [('num_register', 4), ('width', self.conf_bus_width+1)]
             w = wires['conf_bus_reg_in'][pe]
             con = [('clk', clk), ('rst', Int(0, 1, 2)), ('en', Int(1, 1, 2)), ('in', w),
                    ('out', wires['conf_bus_reg_out'][pe])]
@@ -135,7 +136,7 @@ class Cgra:
 
         return m
 
-    def __make_pe(self, pe_arch):
+    def __create_pe(self, pe_arch):
         has_acc = pe_arch['acc']
         isa = pe_arch['isa']
         isa.sort()
@@ -149,8 +150,11 @@ class Cgra:
         for i in isa:
             s += i + '_'
         s = s[:-1]
-        acc = '_acc' if has_acc else ''
-        name = 'pe_%s_%d_%d_%d%s_%s' % (pe_arch['type'], len(neighbors), routes, elastic_queue, acc, s)
+        acc = 'acc_' if has_acc else ''
+
+        elastic_queue_str = ''.join(['%d_' % i for i in elastic_queue])
+
+        name = 'pe_%s_%d_%d_%s%s%s' % (pe_arch['type'], len(neighbors), routes, elastic_queue_str, acc, s)
         if name in self.cache.keys():
             return self.cache[name]
 
@@ -160,7 +164,7 @@ class Cgra:
         # Module ports:
         clk = m.Input('clk')
         en = m.Input('en')
-        conf_bus = m.Input('conf_bus', self.conf_bus_width)
+        conf_bus = m.Input('conf_bus', self.conf_bus_width+1)
         inputs = [m.Input('in%d' % i, self.data_width) for i in range(len(neighbors))]
         outputs = [m.Output('out%d' % i, self.data_width) for i in range(len(neighbors))]
         mux_alu_inputs = []
@@ -219,14 +223,14 @@ class Cgra:
             m.Instance(mux_alu, 'mux_alu_in%d' % i, params, con)
             elastic_pipeline_to_alu = m.Wire('elastic_pipeline_to_alu%d' % i, self.data_width)
             con = [('in', alu_in[i]), ('out', elastic_pipeline_to_alu)]
-            if elastic_queue > 0:
-                sel_elastic_pipeline.append(m.Wire('sel_elastic_pipeline%d' % i, bits(elastic_queue + 1)))
+            if elastic_queue[i] > 0:
+                sel_elastic_pipeline.append(m.Wire('sel_elastic_pipeline%d' % i, bits(elastic_queue[i] + 1)))
                 con.append(('clk', clk))
                 con.append(('en', en))
                 con.append(('latency', sel_elastic_pipeline[i]))
 
             params = [('width', self.data_width)]
-            eq = self.components.create_elastic_pipeline(elastic_queue)
+            eq = self.components.create_elastic_pipeline(elastic_queue[i])
             m.Instance(eq, 'elastic_pipeline%d' % i, params, con)
             alu_in[i] = elastic_pipeline_to_alu
 
@@ -234,7 +238,7 @@ class Cgra:
         con += [('in%d' % i, alu_in[i]) for i in range(alu_num_inputs)]
         con.append(('out', alu_out))
         params = [('width', self.data_width)]
-        m.Instance(self.__make_alu(isa, alu_num_inputs), 'alu', params, con)
+        m.Instance(self.__create_alu(isa, alu_num_inputs), 'alu', params, con)
 
         if has_acc:
             reg_acc = self.components.create_register_pipeline()
@@ -283,11 +287,12 @@ class Cgra:
         for w in conf_array_router:
             conf_router_width += w.width
 
+        # This is used in CgraConfigurations class!
         self.pe_conf_width[name] = conf_alu_width + conf_router_width
 
         conf_alu = m.Wire('conf_alu', conf_alu_width)
         conf_router = ''
-        params = [('pe_id', id), ('conf_bus_width', self.conf_bus_width)]
+        params = [('pe_id', id)]
         con = [('clk', clk), ('conf_bus', conf_bus), ('reset', reset), ('conf_alu', conf_alu),
                ('conf_const', pe_const)]
         if conf_router_width > 0:
@@ -296,9 +301,9 @@ class Cgra:
         if has_acc:
             con.append(('conf_acc', conf_acc))
 
-        cf = self.__make_pe_conf_reader(has_acc, conf_router_width > 0, self.pe_id_width, conf_alu_width,
-                                        self.data_width,
-                                        conf_router_width)
+        cf = self.__create_pe_conf_reader(has_acc, conf_router_width > 0, self.pe_id_width, conf_alu_width,
+                                          self.data_width,
+                                          conf_router_width)
 
         m.Instance(cf, 'pe_conf_reader', params, con)
 
@@ -323,7 +328,7 @@ class Cgra:
             r = max(self.alu_ops[i].get_num_operand(), r)
         return r
 
-    def __make_alu(self, isa, num_inputs):
+    def __create_alu(self, isa, num_inputs):
         s = ''
         for i in isa:
             s += i + '_'
@@ -370,9 +375,8 @@ class Cgra:
         self.cache[name] = m
         return m
 
-    def __make_pe_conf_reader(self, has_acc, has_router, pe_id_width, conf_alu_width, conf_const_width,
-                              conf_router_width=0):
-
+    def __create_pe_conf_reader(self, has_acc, has_router, pe_id_width, conf_alu_width, conf_const_width,
+                                conf_router_width=0):
         tag_bits = 3
         acc = '_acc' if has_acc else ''
         name = 'pe_conf_reader%s_alu_width_%d_router_width_%d' % (acc, conf_alu_width, conf_router_width)
@@ -382,10 +386,9 @@ class Cgra:
 
         m = Module(name)
         pe_id = m.Parameter('pe_id', 0)
-        conf_bus_width = m.Parameter('conf_bus_width', self.conf_bus_width)
 
         clk = m.Input('clk')
-        conf_bus = m.Input('conf_bus', conf_bus_width)
+        conf_bus = m.Input('conf_bus', self.conf_bus_width + 1)
         reset = m.OutputReg('reset')
         conf_alu = m.OutputReg('conf_alu', conf_alu_width)
         conf_const = m.OutputReg('conf_const', conf_const_width)
@@ -401,25 +404,28 @@ class Cgra:
         else:
             conf_width += max(conf_alu_width, conf_const_width)
 
-        conf_shift = self.conf_bus_width - 1
-        conf_reg = m.Reg('conf_reg', conf_width)
-        conf_reg0 = m.Reg('conf_reg0', conf_width)
-        conf_reg1 = m.Reg('conf_reg1', conf_width)
-        flag = m.Reg('flag')
-        conf_valid = m.Reg('conf_valid')
-        m.Always(Posedge(clk))(
-            conf_valid(conf_bus[0]),
-            flag(Mux(conf_bus[0], ~flag, flag)),
-            If(flag)(
-                conf_reg1(0),
-                conf_reg0(Cat(conf_reg0[0:conf_width - conf_shift], conf_bus[1:])),
-                conf_reg(Cat(conf_reg0[0:conf_width - conf_shift], conf_bus[1:])),
-            ).Else(
-                conf_reg0(0),
-                conf_reg1(Cat(conf_reg1[0:conf_width - conf_shift], conf_bus[1:])),
-                conf_reg(Cat(conf_reg1[0:conf_width - conf_shift], conf_bus[1:])),
-            )
+        val = int(ceil(conf_width / self.conf_bus_width))
 
+        conf_bus_r = m.Reg('conf_bus_r', self.conf_bus_width + 1)
+        conf_valid = m.Reg('conf_valid')
+        conf_reg = m.Reg('conf_reg', conf_width)
+        conf_raw_reg = m.Reg('conf_raw_reg', val * self.conf_bus_width)
+        count = m.Reg('count', val)
+        m.Always(Posedge(clk))(
+            conf_bus_r(conf_bus)
+        )
+        m.Always(Posedge(clk))(
+            conf_valid(Int(0, 1, 2)),
+            conf_reg(Int(0, conf_width, 2)),
+            conf_raw_reg(Mux(conf_bus_r[0], Cat(conf_bus_r[1:], conf_raw_reg[self.conf_bus_width:]),
+                             Int(0, conf_raw_reg.width, 10))),
+            count(Mux(conf_bus_r[0], Cat(Int(1, 1, 2), count[1:]),  Int(0, count.width, 10))),
+
+            If(count[0])(
+                conf_reg(conf_raw_reg[0:conf_reg.width]),
+                conf_valid(Int(1, 1, 2)),
+                count(Cat(conf_bus_r[0], Int(0, count.width-1, 2)))
+            )
         )
         case = Case(conf_reg[pe_id_width:pe_id_width + tag_bits])()
         reset_case = When(Int(0, tag_bits, 2))(reset(Int(1, 1, 2)), conf_alu(0), conf_const(0))
@@ -442,12 +448,9 @@ class Cgra:
             case.add(acc_case)
 
         case.add(reset_case)
-
         m.Always(Posedge(clk))(
             reset(Int(0, 1, 2)),
-            If(conf_valid)(
-                If(pe_id == conf_reg[0:pe_id_width])(case)
-            )
+            If(AndList(conf_valid, pe_id == conf_reg[0:pe_id_width]))(case)
         )
 
         initialize_regs(m)

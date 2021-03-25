@@ -1,7 +1,7 @@
+from src.simul.simul_dot.dot.dot_interpreter import DotInterpreter
 from src.simul.simul_dot.nodes.add_node import AddNode
 from src.simul.simul_dot.nodes.input_node import InputNode
 from src.simul.simul_dot.nodes.output_node import OutputNode
-from src.simul.simul_dot.dot.dot_interpreter import DotInterpreter
 from src.simul.util.simul_util_functions import search_a_path, correct_directory_path
 
 

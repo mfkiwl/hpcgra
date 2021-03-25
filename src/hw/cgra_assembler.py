@@ -1,5 +1,6 @@
 import re
 
+from hw.utils import to_hex
 from src.hw.cgra_configuration import CgraConfiguration
 
 

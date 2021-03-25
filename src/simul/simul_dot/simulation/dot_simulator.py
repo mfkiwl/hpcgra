@@ -1,5 +1,5 @@
-from src.simul.simul_dot.dot.dot_interpreter import DotInterpreter
 from src.simul.simul_dot.dataflow.dataflow import DataFlow
+from src.simul.simul_dot.dot.dot_interpreter import DotInterpreter
 
 
 # TODO DESCRIPTION AND COMMENTS

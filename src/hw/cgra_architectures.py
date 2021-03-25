@@ -1,4 +1,4 @@
-from utils import get_id
+from hw.utils import get_id
 
 
 def create_neighbors(shape, i, j, arch_type):
@@ -71,16 +71,18 @@ def create_neighbors(shape, i, j, arch_type):
     return neighbors
 
 
-def create_cgra(arch_net, shape, isa, routes, fifos, acc, data_width, conf_bus_width):
-    json_arch = {'shape': list(shape), 'data_width': data_width, 'conf_bus_width': conf_bus_width,
+def create_cgra(arch_net, shape, isa, routes, fifos, acc, data_width, conf_bus_width, inputs, outputs):
+    json_arch = {'data_width': data_width, 'conf_bus_width': conf_bus_width,
                  'pe': []}
 
     for i in range(shape[0]):
         for j in range(shape[1]):
             id = get_id(i, j, shape[1])
-            if j == 0:
+            if id in inputs and id in outputs:
+                pe_type = 'inout'
+            elif id in inputs:
                 pe_type = 'input'
-            elif j == shape[1] - 1:
+            elif id in outputs:
                 pe_type = 'output'
             else:
                 pe_type = 'basic'

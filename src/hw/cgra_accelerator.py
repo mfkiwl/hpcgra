@@ -22,7 +22,8 @@ class CgraAccelerator:
         comp = Components()
         fd = comp.create_fecth_data()
         dd = comp.create_dispath_data()
-        control_conf = comp.create_control_conf(self.cgra.id, self.num_in, self.num_out, len(self.cgra.arch['pe']))
+        control_conf = comp.create_control_conf(self.cgra.id, self.cgra.conf_bus_width, self.num_in, self.num_out,
+                                                len(self.cgra.arch['pe'])*4)
         control_exec = comp.create_control_exec(self.cgra.id, self.num_in, self.num_out)
 
         m = Module('cgra_acc')
@@ -53,7 +54,7 @@ class CgraAccelerator:
         en_push = m.Wire('en_push', self.num_out)
         fifo_out_data = m.Wire('fifo_out_data', self.cgra.data_width * self.num_out)
         available_push = m.Wire('available_push', self.num_out)
-        conf_out_bus = m.Wire('conf_out_bus', self.cgra.conf_bus_width)
+        conf_out_bus = m.Wire('conf_out_bus', self.cgra.conf_bus_width + 1)
         read_fifo_mask = m.Wire('read_fifo_mask', self.num_in)
         write_fifo_mask = m.Wire('write_fifo_mask', self.num_out)
         write_fifo_ignore = m.Wire('write_fifo_ignore', self.num_out * 16)
