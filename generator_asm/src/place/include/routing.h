@@ -5,10 +5,10 @@ using namespace std;
 
 #include <vector>
 #include <map>
-
+#include "instance.h"
 
 void routing(int GRID_SIZE, int EDGE_SIZE, int NODE_SIZE, vector<pair<int,int>> &vector_edges, 
-    vector<map<pair<int,int>,int>> &edges_cost, int *pos_i, int *pos_j, int times, int __ARCH, vector<bool> &successfulRoutings) {
+    vector<map<pair<int,int>,int>> &edges_cost, int *pos_i, int *pos_j, int times, int __ARCH, vector<bool> &successfulRoutings, vector<Instance> &instances) {
 
     int a, b;
     int pos_a_x, pos_a_y, pos_b_x, pos_b_y;
@@ -22,7 +22,7 @@ void routing(int GRID_SIZE, int EDGE_SIZE, int NODE_SIZE, vector<pair<int,int>> 
     else if (__ARCH == 0) dFreedom = 4;
     
     int count_per_curr[TOTAL_GRID_SIZE];
-    int grid[TOTAL_GRID_SIZE][dFreedom];
+    vector<vector<int>> grid(TOTAL_GRID_SIZE, vector<int>(dFreedom,0));
     
     for (int t = 0; t < times; ++t) {
         for (int i = 0; i < TOTAL_GRID_SIZE; ++i) {
@@ -231,7 +231,8 @@ void routing(int GRID_SIZE, int EDGE_SIZE, int NODE_SIZE, vector<pair<int,int>> 
             }
             //printf("%d -> %d old Cost: %d new Cost: %d\n", a, b, edges_cost[t][make_pair(a,b)], step);
             edges_cost[t][make_pair(a,b)] = step;
-        }   
+        }
+        if(successfulRoutings[t]) instances[t].setRouting(grid,__ARCH);
     }
 }
 
