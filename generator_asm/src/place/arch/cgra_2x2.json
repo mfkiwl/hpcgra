@@ -7,7 +7,7 @@
       "type": "input",
       "neighbors": [1,2],
       "routes": 0,
-      "elastic_queue": 4,
+      "elastic_queue": [2,2],
       "acc": true,
       "isa": ["add", "mul", "sub"]
     },
@@ -16,7 +16,7 @@
       "type": "output",
       "neighbors": [0,3],
       "routes": 0,
-      "elastic_queue": 4,
+      "elastic_queue": [2,2],
       "acc": false,
       "isa": ["add","mul","sub"]
     },
@@ -25,7 +25,7 @@
       "type": "input",
       "neighbors": [0,3],
       "routes": 0,
-      "elastic_queue": 4,
+      "elastic_queue": [2,2],
       "acc": false,
       "isa": ["add","mul","sub"]
     },
@@ -34,7 +34,7 @@
       "type": "basic",
       "neighbors": [1,2],
       "routes": 0,
-      "elastic_queue": 4,
+      "elastic_queue": [2,2],
       "acc": false,
       "isa": ["add","mul","sub"]
     }

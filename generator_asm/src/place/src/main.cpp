@@ -56,7 +56,10 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (!read_arch(path_arch)){ 
+    // arch
+    pe_t* pe;
+
+    if (!read_arch(path_arch, pe)){ 
         printf("ERROR: Read the arch json file\n");
         return 1;
     }
