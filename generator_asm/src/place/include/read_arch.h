@@ -44,7 +44,7 @@ typedef struct pe_t {
 bool read_arch(string &arch_file, vector<pe_t>& pe) {
 
     // map to 
-    map<string,int> map_type = {{"input", 1}, {"output", 2}, {"inout", 3}, {"basic", 4}};
+    map<string,int> map_type = {{"input", 0}, {"output", 1}, {"inout", 2}, {"basic", 3}};
 
     // map to isa
     std::map<std::string, int> map_isa = {{"add", 0},

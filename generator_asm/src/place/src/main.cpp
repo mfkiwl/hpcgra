@@ -14,11 +14,12 @@
 #include <fstream>
 #include <omp.h>
 #include <map>
+#include <algorithm>
 //#include <annealing.h>
 #include <instance.h>
 #include <read_arch.h>
 
-#define NGRIDS 1000
+#define NGRIDS 10
 
 using namespace std;
 using namespace std::chrono;
@@ -56,6 +57,9 @@ int main(int argc, char** argv) {
         else if (pe[i].type == 1 || pe[i].type == 2) pe_out.push_back(pe[i].id);
         else pe_basic.push_back(pe[i].id);
     }
+
+    for (int i = 0; i < pe_in.size(); ++i) printf("%d ", pe_in[i]);
+    printf("\n");
     
     Graph g(path_dot);
     const int SIZE_NODES = g.num_nodes();
@@ -131,25 +135,37 @@ int main(int argc, char** argv) {
             pos_y[k*SIZE_NODES+i] = 0;
         }
         for (int i = 0; i < TOTAL_GRID_SIZE; ++i) {
-            grid[k*TOTAL_GRID_SIZE+i] = 0;
+            grid[k*TOTAL_GRID_SIZE+i] = -1; // -1 is empty
         }
     }
     
     double time_total = 0.0;
     int cost_min = -1;
-    
-    for (int t = 0; t < NGRIDS; ++t) {
-        
-    }
 
     //Vetor da estrutura Instance que guarda informações de resultado de uma da NGRIDS instâncias
     //vector<vector<Instance>> instances(num_arch);
 
+    printf("ola\n");
+
     vector<int> local_swap;
     for (int i = 0; i < NGRIDS; i++){
-        local_swap.resize(0); 
 
-        local_swap = g.get_inputs();
+        //local_swap = g.get_inputs();
+        
+        //random_shuffle( local_swap.begin(), local_swap.end() );
+
+        //for (int j = 0; j < local_swap.size(); ++j) {
+           // grid[i*TOTAL_GRID_SIZE+pe_in[j]] =  local_swap[j];
+        //}
+        
+        //for (int j = 0; j < NGRIDS*TOTAL_GRID_SIZE; ++j) printf("%d ", grid[j]);
+        //printf("\n");
+
+        /*
+        for (int j = 0; j < g.get_inputs().size(); ++j) {
+            printf("%d ", local_swap[j]);
+        }
+        printf("\n");*/
 
     }
 
@@ -304,10 +320,11 @@ int main(int argc, char** argv) {
     }
     */
 
+   /*
     delete h_edgeA;
     delete h_edgeB;
     delete v;
-    delete v_i;
+    delete v_i;*/
 
     //writeFile(activeFifos, argv[2], gridSize, successfulRoutings);
    
