@@ -41,7 +41,7 @@ typedef struct pe_t {
     vector<int> isa;
 } pe_t;
 
-bool read_arch(string &arch_file, pe_t* pe) {
+bool read_arch(string &arch_file, vector<pe_t>& pe) {
 
     // map to 
     map<string,int> map_type = {{"input", 1}, {"output", 2}, {"inout", 3}, {"basic", 4}};
@@ -74,38 +74,33 @@ bool read_arch(string &arch_file, pe_t* pe) {
     }
     ifs.close();
 
-    
     int size_pe = data["pe"].size();
     int size_neighbors = 0;
     int size_elastic_queue = 0;
     int size_isa = 0;
-    
-    cout << size_pe << endl;
 
-    pe = new pe_t[size_pe];
-    
     for (int i = 0; i < size_pe; ++i) {
-        pe[i].id = data["pe"][i]["id"].asInt();
-        pe[i].type = map_type[data["pe"][i]["type"].asString()];
+        pe_t aux_pe;
+        aux_pe.id = data["pe"][i]["id"].asInt();
+        aux_pe.type = map_type[data["pe"][i]["type"].asString()];
         
         size_neighbors = data["pe"][i]["neighbors"].size();
         for (int j = 0; j < size_neighbors; ++j) {
-            pe[i].neighbors.push_back(data["pe"][i]["neighbors"][j].asInt());
+            aux_pe.neighbors.push_back(data["pe"][i]["neighbors"][j].asInt());
         }
 
-        pe[i].routes = data["pe"][i]["routes"].asInt();
+        aux_pe.routes = data["pe"][i]["routes"].asInt();
 
         for (int j = 0; j < size_elastic_queue; ++j) {
-            pe[i].elastic_queue.push_back(data["pe"][i]["elastic_queue"][j].asInt());
+            aux_pe.elastic_queue.push_back(data["pe"][i]["elastic_queue"][j].asInt());
         }
 
-        pe[i].acc = data["pe"][i]["acc"].asBool();
+        aux_pe.acc = data["pe"][i]["acc"].asBool();
 
         for (int j = 0; j < size_elastic_queue; ++j) {
-            pe[i].isa.push_back(map_isa[data["pe"][i]["isa"][j].asString()]);
+            aux_pe.isa.push_back(map_isa[data["pe"][i]["isa"][j].asString()]);
         }
-
-        cout << pe[i].id << endl;
+        pe.push_back(aux_pe);
     }
 
     return true;

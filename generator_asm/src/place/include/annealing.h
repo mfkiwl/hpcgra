@@ -72,34 +72,26 @@ void printPlacementInfo(int nodes, int gridSize, int *grid, int *positions, int 
     printf("\n\n");
 }
 
-int gridCost(int edges, int dim, int *h_edgeA, int *h_edgeB, int *positions, int arch, vector<vector<int>> &tablemesh, vector<vector<int>> &table1hop, vector<vector<int>> &tablechess1hop, vector<vector<int>> &tablechessmesh, vector<vector<int>> &tablehex){
-    int cost_ = 0, increment=0, distManhattanI, distManhattanJ, chess;
+int gridCost(int edges, int dim, int *h_edgeA, int *h_edgeB, int *positions, int arch, vector<vector<int>> &table){
+    int cost_ = 0, increment = 0, distManhattanI, distManhattanJ, ifrom, jfrom, ito, jto;
     for(int k=0; k<edges; k++){
-        int ifrom = positions[h_edgeA[k]]/dim; 
-        int jfrom = positions[h_edgeA[k]]%dim; 
-        int ito = positions[h_edgeB[k]]/dim; 
-        int jto = positions[h_edgeB[k]]%dim;
+        ifrom = positions[h_edgeA[k]]/dim; 
+        jfrom = positions[h_edgeA[k]]%dim; 
+        ito = positions[h_edgeB[k]]/dim; 
+        jto = positions[h_edgeB[k]]%dim;
         // cout << ifrom << " " << jfrom << " " << ito << " " << jto << endl; 
         
         distManhattanJ = abs(jto - jfrom);
         distManhattanI = abs(ito - ifrom);
 
-        if (arch == 0)
-            increment = tablemesh[distManhattanI][distManhattanJ];
-        else if (arch == 2) {
-            chess = (abs(jfrom-ifrom)%2==0) ? 1 : 0;
-            increment = (chess==1) ? tablechess1hop[distManhattanI][distManhattanJ] : tablechessmesh[distManhattanI][distManhattanJ];        
-        } else if (arch == 1) {
-            increment = table1hop[distManhattanI][distManhattanJ];
-        } else if (arch == 3) {
-            increment = tablehex[distManhattanI][distManhattanJ];
-        }
+        increment = tablemesh[distManhattanI][distManhattanJ];
+        
         cost_ += increment;
     }
     return cost_;
 }
 
-void annealing2(int iresult, int nodes, int dim, int gridSize, int &cost, int *grid, int *positions, int *v_i, int *v, vector<int> &A, int arch, bool *io, bool *borders, bool *mults, bool *others, bool *pattern, int **results, double *randomvec, vector<vector<int>> &tablemesh, vector<vector<int>> &table1hop, vector<vector<int>> &tablechess1hop, vector<vector<int>> &tablechessmesh, vector<vector<int>> &tablehex){
+void annealing2(int iresult, int nodes, int dim, int gridSize, int &cost, int *grid, int *positions, int *v_i, int *v, vector<int> &A, int arch, bool *io, bool *borders, bool *mults, bool *others, bool *pattern, int **results, double *randomvec, vector<vector<int>> &table){
     int *localGrid, *localPositions;
     int currentCost = cost, nextCost, swapCount=0, increment, distManhattanI, distManhattanJ, chess;
     localGrid = new int[gridSize];

@@ -14,7 +14,7 @@
 #include <fstream>
 #include <omp.h>
 #include <map>
-#include <annealing.h>
+//#include <annealing.h>
 #include <instance.h>
 #include <read_arch.h>
 
@@ -23,25 +23,12 @@
 using namespace std;
 using namespace std::chrono;
 
-//Tables with costs for mesh and 1hop
-vector<vector<int>> tablemesh;
-vector<vector<int>> table1hop;
-vector<vector<int>> tablechess1hop;
-vector<vector<int>> tablechessmesh;
-vector<vector<int>> tablehex;
-
 int main(int argc, char** argv) {
     srand (time(NULL));
     
-    int **results;
-    results = new int*[NGRIDS];
-    for(int i=0; i<NGRIDS; i++){
-        results[i] = new int[4];
-    }
-    double *randomvec;
-    randomvec = new double[1000000];
-    for(int i=0;i<1000000;i++){
-        randomvec[i] = (double)rand() / (double)(RAND_MAX);
+    double *randomvec = new double[1000000];
+    for(int i = 0; i < 1000000; i++){
+        randomvec[i] = (double) rand() / (double)(RAND_MAX);
     }
     //Cria a estrutura do grafo com os vetores (A, v e v_i) à partir do grafo g
     string path_dot = "", name = "", path_arch= "";
@@ -56,43 +43,43 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // arch
-    pe_t* pe;
+    vector<int> pe_in, pe_out, pe_basic; 
 
-    if (!read_arch(path_arch, pe)){ 
-        printf("ERROR: Read the arch json file\n");
-        return 1;
+    vector<pe_t> pe;
+
+    // read arch
+    if (!read_arch(path_arch, pe)) return 1;
+
+
+    for (int i = 0; i < pe.size(); ++i) {
+        if (pe[i].type == 0 || pe[i].type == 2) pe_in.push_back(pe[i].id);
+        else if (pe[i].type == 1 || pe[i].type == 2) pe_out.push_back(pe[i].id);
+        else pe_basic.push_back(pe[i].id);
     }
     
     Graph g(path_dot);
-    int nodes = g.num_nodes();
-    int edges = g.num_edges();
+    const int SIZE_NODES = g.num_nodes();
+    const int SIZE_EDGES = g.num_edges();
     int *h_edgeA, *h_edgeB;
 
-    h_edgeA = new int[edges];
-    h_edgeB = new int[edges];
+    h_edgeA = new int[SIZE_EDGES];
+    h_edgeB = new int[SIZE_EDGES];
     vector<pair<int,int>> edge_list = g.get_edges();
     vector<int> A;
     int *v, *v_i;
     bool *io, *mults, *others;
-    v = new int[nodes];
-    v_i = new int[nodes];
-    io = new bool[nodes];
-    mults = new bool[nodes];
-    others = new bool[nodes];
+    v = new int[SIZE_NODES];
+    v_i = new int[SIZE_NODES];
 
     //Matriz de booleanos para identificar ios e mults
-    for(int i=0; i < nodes; i++){
-        v[i]=0; 
-        v_i[i]=0;
-        io[i] = false;
-        mults[i] = true;
-        others[i] = false;
+    for(int i = 0; i < SIZE_NODES; i++){
+        v[i] = 0; 
+        v_i[i] = 0;
     }
 
     //Preenche a estrutura do grafo
     int n1, n2;
-    for(int i=0; i < edge_list.size(); i++){
+    for(int i = 0; i < edge_list.size(); i++){
         n1 = edge_list[i].first;
         n2 = edge_list[i].second;
         h_edgeA[i] = n1;
@@ -101,12 +88,12 @@ int main(int argc, char** argv) {
         if(n1 != n2) v[n2]++;
     }
 
-    for(int i=1; i < nodes; i++){
+    for(int i=1; i < SIZE_NODES; i++){
         v_i[i] = v_i[i-1] + v[i-1];
     }
 
-    for(int i = 0; i < nodes; ++i){
-        for(int j = 0; j < edges; ++j){
+    for(int i = 0; i < SIZE_NODES; ++i){
+        for(int j = 0; j < SIZE_EDGES; ++j){
             if (h_edgeA[j] != h_edgeB[j]) {
                 if(h_edgeA[j] == i) A.push_back(h_edgeB[j]);
                 if(h_edgeB[j] == i) A.push_back(h_edgeA[j]);
@@ -117,183 +104,116 @@ int main(int argc, char** argv) {
     }
 
     //Variáveis para o placement
-    int dim, gridSize;
-    int **grid;
-    int **positions;
-    bool *pattern;         
-    bool *borders;        
     int cost = 100000;
-    int nGrids = NGRIDS; 
-    
-    //Marca quais nós são IO
-    for(int i=0; i<nodes; i++){
-        if(g.get_predecessors(i).size() == 0 || g.get_sucessors(i).size() == 0) io[i] = true;
-    }
 
-    dim = ceil(sqrt(nodes));
-    //Cria matrizes de distâncias
-    buildMatrices(dim, tablemesh, table1hop, tablechess1hop, tablechessmesh, tablehex);
-    gridSize = dim*dim;
-    const int num_arch = 4;
+    const int GRID_SIZE = ceil(sqrt(SIZE_NODES));
+    const int TOTAL_GRID_SIZE = GRID_SIZE * GRID_SIZE;
 
     //Guarda numero de PES utilizados (Remover em breve)
-    vector<vector<vector<int>>> activeFifos(num_arch, vector<vector<int>>(NGRIDS,vector<int>(500,0)));
+    //vector<vector<vector<int>>> activeFifos(num_arch, vector<vector<int>>(NGRIDS,vector<int>(500,0)));
     //Vetores para guardar o numero de buffers por aresta
-    vector<vector<map<pair<int,int>,int>>> edges_cost(num_arch);
-    vector<vector<map<pair<int,int>,int>>> buffers(num_arch);
-    //Distancia manhattan por aresta
-    map<pair<int,int>,int> manh;
-    vector<pair<int,int>> edges_ = g.get_edges();
-    for(int arch=0; arch<num_arch; arch++){
-        edges_cost[arch].resize(NGRIDS);
-        buffers[arch].resize(NGRIDS);
-        for(int k=0; k<NGRIDS; k++){
-            for(int i = 0; i < edges; i++){
-                pair<int,int> aux = edges_[i];
-                edges_cost[arch][k][aux] = 0;
-                buffers[arch][k][aux] = 0;
-            }   
+    
+    int *grid = new int[TOTAL_GRID_SIZE * NGRIDS];
+    int *edges_cost = new int[SIZE_EDGES * NGRIDS];
+    int *buffers = new int[SIZE_EDGES * NGRIDS];
+    int *pos_x = new int[SIZE_EDGES * NGRIDS];
+    int *pos_y = new int[SIZE_NODES * NGRIDS];
+    int *results = new int[NGRIDS];
+    
+    // Fill zero in the data
+    for (int k = 0; k < NGRIDS; k++) {
+        for (int i = 0; i < SIZE_EDGES; ++i) {
+           edges_cost[k*SIZE_EDGES+i] = 0;
+           buffers[k*SIZE_EDGES+i] = 0;
+        }
+        for (int i = 0; i < SIZE_NODES; ++i) {
+            pos_x[k*SIZE_NODES+i] = 0;
+            pos_y[k*SIZE_NODES+i] = 0;
+        }
+        for (int i = 0; i < TOTAL_GRID_SIZE; ++i) {
+            grid[k*TOTAL_GRID_SIZE+i] = 0;
         }
     }
-    double time_total[num_arch] = {0.0, 0.0, 0.0, 0.0};
-    int cost_min[num_arch] = {-1,-1,-1, -1};
-
-    //Aloca memoria pros grids
-    grid = new int*[nGrids];
-    positions = new int*[nGrids];
-    for(int i=0; i<nGrids; i++) grid[i] = new int[gridSize];
-    for(int i=0; i<nGrids; i++) {
-        positions[i] = new int[nodes];
-        for(int j=0; j<nodes;j++) positions[i][j]=0;
-    }    
-    borders = new bool[gridSize];
-    pattern = new bool[gridSize];
-    for(int i=0; i<gridSize; i++){
-        borders[i] = false;
-        //true for NORMAL, false for patterns
-        pattern[i] = true;
+    
+    double time_total = 0.0;
+    int cost_min = -1;
+    
+    for (int t = 0; t < NGRIDS; ++t) {
+        
     }
-    int availableMults=0;
-    for(int i=0; i<gridSize; i++){
-        //set borders
-        if(i/dim==0) borders[i] = true;
-        if(i/dim==dim-1) borders[i] = true;
-        if(i%dim==0) borders[i] = true;
-        if(i%dim==dim-1) borders[i] = true;  
-        //set mults chess
-        // if(abs(i%dim-i/dim)%2==0){
-        //     pattern[i]=true;
-        //     availableMults++;
-        // }
-        // else pattern[i]=false;
 
-        //set mults cols
-        // if((i%dim)%2==0){
-        //     pattern[i]=true;
-        //     availableMults++;
-        // }
-        // else pattern[i]=false;
-
-        //set mults cols 2 spaces
-        // if((i%dim)%3==0){
-        //     pattern[i]=true;
-        //     availableMults++;
-        // }
-        // else pattern[i]=false;
-
-        //set borders = mults   
-        // if(i/dim==0){
-        //     pattern[i] = true;
-        //     availableMults++;
-        // }
-        // if(i/dim==dim-1){
-        //     pattern[i] = true;
-        //     availableMults++;
-        // } 
-        // if(i%dim==0){
-        //     pattern[i] = true;
-        //     availableMults++;
-        // } 
-        // if(i%dim==dim-1){
-        //     pattern[i] = true;
-        //     availableMults++;
-        // }     
-    }
-    //REATIVAR SE FOR HETEROGENEO
-    // if(numMults>=availableMults) return 0;
-
-    //Para marcar quais instancias tiveram roteamento feito com sucesso
-    vector<vector<bool>> successfulRoutings(num_arch,vector<bool>(nGrids,true));
     //Vetor da estrutura Instance que guarda informações de resultado de uma da NGRIDS instâncias
-    vector<vector<Instance>> instances(num_arch);
+    //vector<vector<Instance>> instances(num_arch);
 
-    for (int k = 1; k < 2; ++k) {       
-        //Preenche os grids
-        for(int i=0; i<nGrids; i++){
-            for(int j=0; j<gridSize; j++){
-                grid[i][j] = 255;
-            }
+    vector<int> local_swap;
+    for (int i = 0; i < NGRIDS; i++){
+        local_swap.resize(0); 
+
+        local_swap = g.get_inputs();
+
+    }
+
+
+        /*
+        bool *setNodes;
+        setNodes = new bool[nodes];
+        for(int j=0; j<nodes; j++){
+            setNodes[j] = false;
         }
-        for(int i=0; i<nGrids; i++){
-            bool *setNodes;
-            setNodes = new bool[nodes];
-            for(int j=0; j<nodes; j++){
-                setNodes[j] = false;
-            }
-            for(int j=0; j<nodes; j++){
-                if(io[j]==false || mults[j]==false) continue;
-                for(int t=0; t<gridSize; t++){
-                    if(borders[t]==true && pattern[t]==true && setNodes[j]==false && grid[i][t]==255){
-                        grid[i][t]=j;
-                        setNodes[j] = true;
-                        break;
-                    }
-                }
-            }
-            for(int j=0; j<nodes; j++){
-                if(io[j]==false || setNodes[j]==true) continue;
-                for(int t=0; t<gridSize; t++){
-                    if(borders[t]==true  && grid[i][t]==255){
-                        grid[i][t]=j;
-                        setNodes[j] = true;
-                        break;
-                    }
-                }
-            }
-            for(int j=0; j<nodes; j++){
-                if(mults[j]==false || setNodes[j]==true) continue;
-                for(int t=0; t<gridSize; t++){
-                    if(pattern[t]==true && grid[i][t]==255){
-                        grid[i][t]=j;
-                        break;
-                    }
-                }
-            }
-            for(int j=0; j<nodes; j++){
-                if(others[j]==false || setNodes[j]==true) continue;
-                for(int t=0; t<gridSize; t++){
-                    if(grid[i][t]==255){
-                        grid[i][t]=j;
-                        break;
-                    }
-                }
-            }
-            for(int j=0; j<gridSize; j++){
-                for(int t=0; t<gridSize; t++){
-                    double aleat = ((rand()%1000)/1000.0);
-                    if(aleat > 0.5 && (io[j]&&io[t]&&mults[j]&&mults[t])){
-                        int temp = grid[i][j];
-                        grid[i][j] = grid[i][t];
-                        grid[i][t] = temp;
-                    }
-                    if(aleat > 0.5 && (others[j]&&others[t])){
-                        int temp = grid[i][j];
-                        grid[i][j] = grid[i][t];
-                        grid[i][t] = temp;
-                    }  
+        for(int j=0; j<nodes; j++){
+            if(io[j]==false || mults[j]==false) continue;
+            for(int t=0; t<gridSize; t++){
+                if(borders[t]==true && pattern[t]==true && setNodes[j]==false && grid[i][t]==255){
+                    grid[i][t]=j;
+                    setNodes[j] = true;
+                    break;
                 }
             }
         }
+        for(int j=0; j<nodes; j++){
+            if(io[j]==false || setNodes[j]==true) continue;
+            for(int t=0; t<gridSize; t++){
+                if(borders[t]==true  && grid[i][t]==255){
+                    grid[i][t]=j;
+                    setNodes[j] = true;
+                    break;
+                }
+            }
+        }
+        for(int j=0; j<nodes; j++){
+            if(mults[j]==false || setNodes[j]==true) continue;
+            for(int t=0; t<gridSize; t++){
+                if(pattern[t]==true && grid[i][t]==255){
+                    grid[i][t]=j;
+                    break;
+                }
+            }
+        }
+        for(int j=0; j<nodes; j++){
+            if(others[j]==false || setNodes[j]==true) continue;
+            for(int t=0; t<gridSize; t++){
+                if(grid[i][t]==255){
+                    grid[i][t]=j;
+                    break;
+                }
+            }
+        }
+        for(int j=0; j<gridSize; j++){
+            for(int t=0; t<gridSize; t++){
+                double aleat = ((rand()%1000)/1000.0);
+                if(aleat > 0.5 && (io[j]&&io[t]&&mults[j]&&mults[t])){
+                    int temp = grid[i][j];
+                    grid[i][j] = grid[i][t];
+                    grid[i][t] = temp;
+                }
+                if(aleat > 0.5 && (others[j]&&others[t])){
+                    int temp = grid[i][j];
+                    grid[i][j] = grid[i][t];
+                    grid[i][t] = temp;
+                }  
+            }
+        }
+        
         
         
         for(int t=0; t<nGrids; t++){
@@ -310,16 +230,12 @@ int main(int argc, char** argv) {
 
         #pragma omp parallel for
         for (int i = 0; i < nGrids; ++i) {
-            int cost = gridCost(edges, dim, h_edgeA, h_edgeB, positions[i], k, tablemesh, table1hop, tablechess1hop, tablechessmesh, tablehex);
-            // printPlacementInfo(nodes, gridSize, grid[i], positions[i], cost);
-            results[i][0] = cost;
-            if(cost == 0){
-                results[i][1] = cost;
-                results[i][2] = 0;
-                results[i][3] = 0;  
-                continue;
-            }
-            annealing2(i, nodes, dim, gridSize, cost, grid[i], positions[i], v_i, v, A, k, io, borders, mults, others, pattern, results, randomvec, tablemesh, table1hop, tablechess1hop, tablechessmesh, tablehex);
+            int cost = gridCost(edges, dim, h_edgeA, h_edgeB, positions[i], k, table);
+            
+            results[i] = cost;
+            if(cost == 0) continue;
+
+            annealing2(i, nodes, dim, gridSize, cost, grid[i], positions[i], v_i, v, A, k, io, borders, mults, others, pattern, results, randomvec, table);
         }
         auto stop = high_resolution_clock::now();
 
@@ -386,13 +302,12 @@ int main(int argc, char** argv) {
         
         printf("%s,%.2f,%d,%.2lf\n", argv[2], 1.0*sum/edges, lowest, time_total[k]);
     }
+    */
 
     delete h_edgeA;
     delete h_edgeB;
     delete v;
     delete v_i;
-    delete io;
-    delete borders;
 
     //writeFile(activeFifos, argv[2], gridSize, successfulRoutings);
    
