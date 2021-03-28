@@ -1,7 +1,7 @@
 #include <Graph.h>
 #include <buffer.h>
 #include <routing.h>
-#include <get_critical_path.h>
+//#include <get_critical_path.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -14,12 +14,12 @@
 #include <fstream>
 #include <omp.h>
 #include <map>
-#include <algorithm>
+#include <data>
 //#include <annealing.h>
-#include <instance.h>
+//#include <instance.h>
 #include <read_arch.h>
 
-#define NGRIDS 10
+#define NGRIDS 2
 
 using namespace std;
 using namespace std::chrono;
@@ -51,7 +51,6 @@ int main(int argc, char** argv) {
     // read arch
     if (!read_arch(path_arch, pe)) return 1;
 
-
     for (int i = 0; i < pe.size(); ++i) {
         if (pe[i].type == 0 || pe[i].type == 2) pe_in.push_back(pe[i].id);
         else if (pe[i].type == 1 || pe[i].type == 2) pe_out.push_back(pe[i].id);
@@ -62,18 +61,24 @@ int main(int argc, char** argv) {
     printf("\n");
     
     Graph g(path_dot);
+
     const int SIZE_NODES = g.num_nodes();
     const int SIZE_EDGES = g.num_edges();
-    int *h_edgeA, *h_edgeB;
+    const int GRID_SIZE = pe.size();
+    const int TOTAL_GRID_SIZE = GRID_SIZE * GRID_SIZE;
 
-    h_edgeA = new int[SIZE_EDGES];
-    h_edgeB = new int[SIZE_EDGES];
+    // Verify if the number of nodes is sufficiently to arch 
+    if (pe.size() < SIZE_NODES) {
+        printf("Architecture of size not sufficient for the size of the graph.\n");
+        return 1;
+    }
+
+    int *h_edgeA = new int[SIZE_EDGES];
+    int *h_edgeB = new int[SIZE_EDGES];
     vector<pair<int,int>> edge_list = g.get_edges();
     vector<int> A;
-    int *v, *v_i;
-    bool *io, *mults, *others;
-    v = new int[SIZE_NODES];
-    v_i = new int[SIZE_NODES];
+    int *v = new int[SIZE_NODES];
+    int *v_i = new int[SIZE_NODES];
 
     //Matriz de booleanos para identificar ios e mults
     for(int i = 0; i < SIZE_NODES; i++){
@@ -108,58 +113,46 @@ int main(int argc, char** argv) {
     }
 
     //Variáveis para o placement
-    int cost = 100000;
-
-    const int GRID_SIZE = ceil(sqrt(SIZE_NODES));
-    const int TOTAL_GRID_SIZE = GRID_SIZE * GRID_SIZE;
-
-    //Guarda numero de PES utilizados (Remover em breve)
-    //vector<vector<vector<int>>> activeFifos(num_arch, vector<vector<int>>(NGRIDS,vector<int>(500,0)));
-    //Vetores para guardar o numero de buffers por aresta
+    int cost = 100000;    
     
     int *grid = new int[TOTAL_GRID_SIZE * NGRIDS];
     int *edges_cost = new int[SIZE_EDGES * NGRIDS];
     int *buffers = new int[SIZE_EDGES * NGRIDS];
-    int *pos_x = new int[SIZE_EDGES * NGRIDS];
+    int *pos_x = new int[SIZE_NODES * NGRIDS];
     int *pos_y = new int[SIZE_NODES * NGRIDS];
     int *results = new int[NGRIDS];
     
-    // Fill zero in the data
-    for (int k = 0; k < NGRIDS; k++) {
-        for (int i = 0; i < SIZE_EDGES; ++i) {
-           edges_cost[k*SIZE_EDGES+i] = 0;
-           buffers[k*SIZE_EDGES+i] = 0;
-        }
-        for (int i = 0; i < SIZE_NODES; ++i) {
-            pos_x[k*SIZE_NODES+i] = 0;
-            pos_y[k*SIZE_NODES+i] = 0;
-        }
-        for (int i = 0; i < TOTAL_GRID_SIZE; ++i) {
-            grid[k*TOTAL_GRID_SIZE+i] = -1; // -1 is empty
-        }
-    }
+    fill_data(NGRIDS, SIZE_EDGES, SIZE_NODES, TOTAL_GRID_SIZE,
+    edges_cost, buffers, pos_x, pos_y, grid);
     
     double time_total = 0.0;
     int cost_min = -1;
-
-    //Vetor da estrutura Instance que guarda informações de resultado de uma da NGRIDS instâncias
-    //vector<vector<Instance>> instances(num_arch);
-
+    
     printf("ola\n");
 
-    vector<int> local_swap;
-    for (int i = 0; i < NGRIDS; i++){
+    vector<int> inputs = g.get_inputs();
+    vector<int> outputs = g.get_outputs();
+    vector<int> basic;
 
-        //local_swap = g.get_inputs();
-        
-        //random_shuffle( local_swap.begin(), local_swap.end() );
+    for (int i = 0; i < SIZE_NODES; ++i) {
+        if (find(inputs.begin(), inputs.end(), i) == inputs.end()
+        && find(outputs.begin(), outputs.end(), i) == outputs.end()){
+            basic.push_back(i);
+        }
+    }
 
-        //for (int j = 0; j < local_swap.size(); ++j) {
-           // grid[i*TOTAL_GRID_SIZE+pe_in[j]] =  local_swap[j];
-        //}
+    for (int n = 0; n < NGRIDS; ++n){
         
-        //for (int j = 0; j < NGRIDS*TOTAL_GRID_SIZE; ++j) printf("%d ", grid[j]);
-        //printf("\n");
+        printf("N %d\n", n);
+
+        random_data(TOTAL_GRID_SIZE, NGRIDS, SIZE_EDGES, n, grid, 
+        inputs, outputs, basic, pe_in, pe_out, pe_basic);
+
+        for (int j = 0; j < SIZE_EDGES; ++j) {
+        printf("%d %d\n", h_edgeA[j], h_edgeB[j]);
+    }
+        
+        
 
         /*
         for (int j = 0; j < g.get_inputs().size(); ++j) {
@@ -168,6 +161,7 @@ int main(int argc, char** argv) {
         printf("\n");*/
 
     }
+    
 
 
         /*
@@ -330,6 +324,15 @@ int main(int argc, char** argv) {
    
     //printf("%s,%d,%d,%d,%d,%.2lf,%.2lf,%.2lf,%.2lf\n", argv[2], cost_min[0], cost_min[1], cost_min[2], cost_min[3], time_total[0], time_total[1], time_total[2], time_total[3]);
     
+    
+    delete v;
+    delete v_i;
+    delete grid;
+    delete edges_cost;
+    delete buffers;
+    delete pos_x;
+    delete pos_y;
+    delete results;
     
     return 0;
 }
